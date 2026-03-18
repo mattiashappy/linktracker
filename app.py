@@ -77,23 +77,37 @@ with app.app_context():
 @app.route("/")
 def index():
     today = datetime.now(timezone.utc).date()
-    query = Domain.query.filter_by(fetch_date=today).order_by(Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc())
-    total_domains = query.count()
+    latest_fetch_date = db.session.query(db.func.max(Domain.fetch_date)).scalar()
+    active_date = today if Domain.query.filter_by(fetch_date=today).first() else latest_fetch_date
 
-    if not current_user.is_authenticated or not current_user.is_premium:
-        domains = query.limit(25).all()
-        is_limited = total_domains > 25
-    else:
-        domains = query.all()
+    if active_date is None:
+        domains = []
+        total_domains = 0
         is_limited = False
+        hidden_count = 0
+    else:
+        query = Domain.query.filter_by(fetch_date=active_date).order_by(
+            Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc()
+        )
+        total_domains = query.count()
 
-    hidden_count = max(total_domains - len(domains), 0)
+        if not current_user.is_authenticated or not current_user.is_premium:
+            domains = query.limit(25).all()
+            is_limited = total_domains > 25
+        else:
+            domains = query.all()
+            is_limited = False
+
+        hidden_count = max(total_domains - len(domains), 0)
+
     return render_template(
         "index.html",
         domains=domains,
         is_limited=is_limited,
         total_domains=total_domains,
         hidden_count=hidden_count,
+        active_date=active_date,
+        using_latest_available=active_date is not None and active_date != today,
     )
 
 

@@ -118,6 +118,9 @@
         <div>
           <h1>Expired Domains with Moz Metrics</h1>
           <p>Daily domains are fetched from the database and sorted by highest Domain Authority first.</p>
+          {% if using_latest_available %}
+            <p><strong>Showing the latest available list from {{ active_date }}.</strong></p>
+          {% endif %}
         </div>
         <div class="actions">
           {% if current_user.is_authenticated %}
@@ -145,7 +148,7 @@
                   <span class="tooltiptext">The total number of unique websites linking to this domain. A higher number indicates a more diverse, trustworthy, and natural link profile.</span>
                 </span>
               </th>
-              <th>Action</th>
+              <th>Buy domain</th>
             </tr>
           </thead>
           <tbody>
@@ -155,7 +158,7 @@
                 <td>{{ domain.da if domain.da is not none else 'N/A' }}</td>
                 <td>{{ domain.linking_root_domains if domain.linking_root_domains is not none else 'N/A' }}</td>
                 <td>
-                  <a class="btn btn-green" href="https://inleed.se/r/1890482385" target="_blank">Köp domän</a>
+                  <a class="btn btn-green" href="https://inleed.se/r/1890482385" target="_blank">Buy domain</a>
                 </td>
               </tr>
             {% endfor %}
