@@ -151,21 +151,39 @@ def scrape_domains(limit: int = MAX_DOMAINS) -> List[str]:
     return extracted
 
 
+def get_moz_auth_kwargs() -> Dict[str, Any]:
+    """Build Moz request auth settings from environment variables."""
+    api_token = os.environ.get("MOZ_API_TOKEN") or os.environ.get("Moz-api-token")
+    if api_token:
+        return {
+            "headers": {
+                "Authorization": f"Bearer {api_token}",
+            }
+        }
+
+    access_id = os.environ.get("MOZ_ACCESS_ID")
+    secret_key = os.environ.get("MOZ_SECRET_KEY")
+    if access_id and secret_key:
+        return {
+            "auth": HTTPBasicAuth(access_id, secret_key),
+        }
+
+    raise RuntimeError(
+        "Set either MOZ_API_TOKEN / Moz-api-token or both MOZ_ACCESS_ID and MOZ_SECRET_KEY."
+    )
+
+
+
 def fetch_moz_metrics(domains: List[str]) -> List[Dict[str, Any]]:
     """Fetch Moz metrics for a list of domains."""
     if not domains:
         return []
 
-    access_id = os.environ.get("MOZ_ACCESS_ID")
-    secret_key = os.environ.get("MOZ_SECRET_KEY")
-    if not access_id or not secret_key:
-        raise RuntimeError("MOZ_ACCESS_ID and MOZ_SECRET_KEY must be set as environment variables.")
-
     response = requests.post(
         MOZ_API_URL,
-        auth=HTTPBasicAuth(access_id, secret_key),
         json={"targets": domains},
         timeout=30,
+        **get_moz_auth_kwargs(),
     )
     response.raise_for_status()
 
