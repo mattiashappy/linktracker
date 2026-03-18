@@ -78,15 +78,23 @@ with app.app_context():
 def index():
     today = datetime.now(timezone.utc).date()
     query = Domain.query.filter_by(fetch_date=today).order_by(Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc())
+    total_domains = query.count()
 
     if not current_user.is_authenticated or not current_user.is_premium:
         domains = query.limit(25).all()
-        is_limited = True
+        is_limited = total_domains > 25
     else:
         domains = query.all()
         is_limited = False
 
-    return render_template("index.html", domains=domains, is_limited=is_limited)
+    hidden_count = max(total_domains - len(domains), 0)
+    return render_template(
+        "index.html",
+        domains=domains,
+        is_limited=is_limited,
+        total_domains=total_domains,
+        hidden_count=hidden_count,
+    )
 
 
 @app.route("/register", methods=["GET", "POST"])
