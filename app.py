@@ -77,7 +77,7 @@ TEMPLATE = """
   <body>
     <div class="container">
       <h1>Expired Domains with Moz Metrics</h1>
-      <p class="meta">Showing up to {{ rows|length }} scraped domains from rymdweb.com.</p>
+      <p class="meta">Showing up to {{ scraped_count }} scraped domains from rymdweb.com.</p>
 
       {% if error %}
         <div class="error">{{ error }}</div>
@@ -153,11 +153,23 @@ def scrape_domains(limit: int = MAX_DOMAINS) -> List[str]:
 
 def get_moz_auth_kwargs() -> Dict[str, Any]:
     """Build Moz request auth settings from environment variables."""
-    api_token = os.environ.get("MOZ_API_TOKEN") or os.environ.get("Moz-api-token")
+    api_token = (os.environ.get("MOZ_API_TOKEN") or os.environ.get("Moz-api-token") or "").strip()
     if api_token:
+        normalized = api_token.lower()
+        if normalized.startswith("basic ") or normalized.startswith("bearer "):
+            return {
+                "headers": {
+                    "Authorization": api_token,
+                }
+            }
+        if ":" in api_token:
+            access_id, secret_key = api_token.split(":", 1)
+            return {
+                "auth": HTTPBasicAuth(access_id, secret_key),
+            }
         return {
             "headers": {
-                "Authorization": f"Bearer {api_token}",
+                "Authorization": f"Basic {api_token}",
             }
         }
 
@@ -165,11 +177,11 @@ def get_moz_auth_kwargs() -> Dict[str, Any]:
     secret_key = os.environ.get("MOZ_SECRET_KEY")
     if access_id and secret_key:
         return {
-            "auth": HTTPBasicAuth(access_id, secret_key),
+            "auth": HTTPBasicAuth(access_id.strip(), secret_key.strip()),
         }
 
     raise RuntimeError(
-        "Set either MOZ_API_TOKEN / Moz-api-token or both MOZ_ACCESS_ID and MOZ_SECRET_KEY."
+        "Set MOZ_API_TOKEN / Moz-api-token to your Moz basic-auth token, or set MOZ_ACCESS_ID and MOZ_SECRET_KEY."
     )
 
 
@@ -217,15 +229,29 @@ def fetch_moz_metrics(domains: List[str]) -> List[Dict[str, Any]]:
 @app.route("/")
 def index():
     rows: List[Dict[str, Any]] = []
+    domains: List[str] = []
     error = None
 
     try:
         domains = scrape_domains()
-        rows = fetch_moz_metrics(domains)
-    except Exception as exc:  # Keep the page responsive even if a remote request fails.
+    except Exception as exc:  # Keep the page responsive even if scraping fails.
         error = str(exc)
+        return render_template_string(TEMPLATE, rows=rows, error=error, scraped_count=0)
 
-    return render_template_string(TEMPLATE, rows=rows, error=error)
+    try:
+        rows = fetch_moz_metrics(domains)
+    except Exception as exc:  # Show scraped domains even if Moz metrics fail.
+        error = str(exc)
+        rows = [
+            {
+                "target": domain,
+                "domain_authority": None,
+                "root_domains_linking_to_root_domain": None,
+            }
+            for domain in domains
+        ]
+
+    return render_template_string(TEMPLATE, rows=rows, error=error, scraped_count=len(domains))
 
 
 if __name__ == "__main__":
