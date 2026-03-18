@@ -1,515 +1,198 @@
 import os
-import re
-from datetime import date, datetime, timezone
-from typing import Any, Dict, List, Optional
-from urllib.parse import urlparse
+from datetime import datetime, timezone
 
-import psycopg2
-import requests
-from bs4 import BeautifulSoup
-from flask import Flask, render_template_string
-from psycopg2.extras import RealDictCursor, execute_values
-from requests.auth import HTTPBasicAuth
+import stripe
+from flask import Flask, abort, redirect, render_template, render_template_string, request, url_for
+from flask_login import LoginManager, current_user, login_required, login_user, logout_user
+
+from models import Domain, User, db
+
+
+def normalize_database_url(database_url: str) -> str:
+    if database_url.startswith("postgres://"):
+        return database_url.replace("postgres://", "postgresql://", 1)
+    return database_url
+
 
 app = Flask(__name__)
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
+app.config["SQLALCHEMY_DATABASE_URI"] = normalize_database_url(
+    os.environ.get("DATABASE_URL", "sqlite:///app.db")
+)
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-SOURCE_URL = "https://www.rymdweb.com/domain/snapback/?action=date"
-MOZ_API_URL = "https://lsapi.seomoz.com/v2/url_metrics"
-DOMAIN_PATTERN = re.compile(r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:se|nu)\b", re.IGNORECASE)
-MAX_DOMAINS = 25
-REFRESH_LOCK_ID = 4815162342
+db.init_app(app)
 
-TEMPLATE = """
+login_manager = LoginManager()
+login_manager.login_view = "login"
+login_manager.init_app(app)
+
+stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
+
+AUTH_TEMPLATE = """
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Expired Domain Metrics</title>
+    <title>{{ title }}</title>
     <style>
-      body {
-        font-family: Arial, sans-serif;
-        background: #f4f7fb;
-        color: #1f2937;
-        margin: 0;
-        padding: 24px;
-      }
-      .container {
-        max-width: 960px;
-        margin: 0 auto;
-        background: #ffffff;
-        border-radius: 12px;
-        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
-        padding: 24px;
-      }
-      h1 {
-        margin-top: 0;
-      }
-      p.meta {
-        color: #4b5563;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 20px;
-      }
-      th, td {
-        text-align: left;
-        padding: 12px 14px;
-        border-bottom: 1px solid #e5e7eb;
-      }
-      th {
-        background: #111827;
-        color: #ffffff;
-      }
-      .tooltip {
-        position: relative;
-        display: inline-block;
-        cursor: help;
-        border-bottom: 1px dotted rgba(255, 255, 255, 0.7);
-      }
-      .tooltip .tooltiptext {
-        visibility: hidden;
-        width: 280px;
-        background: #1f2937;
-        color: #ffffff;
-        text-align: left;
-        border-radius: 8px;
-        padding: 10px 12px;
-        position: absolute;
-        z-index: 1;
-        bottom: 125%;
-        left: 50%;
-        margin-left: -140px;
-        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);
-        font-weight: normal;
-        line-height: 1.4;
-        opacity: 0;
-        transition: opacity 0.2s ease-in-out;
-      }
-      .tooltip:hover .tooltiptext {
-        visibility: visible;
-        opacity: 1;
-      }
-      tr:nth-child(even) {
-        background: #f9fafb;
-      }
-      .error {
-        margin-top: 16px;
-        padding: 12px 14px;
-        background: #fef2f2;
-        color: #991b1b;
-        border: 1px solid #fecaca;
-        border-radius: 8px;
-      }
-      .empty {
-        margin-top: 16px;
-        color: #6b7280;
-      }
+      body { font-family: Arial, sans-serif; background: #f4f7fb; padding: 32px; color: #1f2937; }
+      .card { max-width: 420px; margin: 0 auto; background: #fff; padding: 24px; border-radius: 12px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08); }
+      input { width: 100%; padding: 12px; margin: 8px 0 14px; border: 1px solid #d1d5db; border-radius: 8px; box-sizing: border-box; }
+      button, a.button { display: inline-block; background: #111827; color: #fff; padding: 12px 16px; border-radius: 8px; text-decoration: none; border: 0; cursor: pointer; }
+      .error { margin-bottom: 14px; color: #b91c1c; }
+      .meta { margin-top: 16px; }
     </style>
   </head>
   <body>
-    <div class="container">
-      <h1>Expired Domains with Moz Metrics</h1>
-      <p class="meta">Showing up to {{ scraped_count }} scraped domains from rymdweb.com. Metrics are cached once per UTC day.</p>
-
-      {% if error %}
-        <div class="error">{{ error }}</div>
-      {% endif %}
-
-      {% if rows %}
-        <table>
-          <thead>
-            <tr>
-              <th>Domain</th>
-              <th>
-                <span class="tooltip">Domain Authority (DA)
-                  <span class="tooltiptext">1-100 score predicting how well a website will rank on search engines. Based largely on link quality. Higher is better.</span>
-                </span>
-              </th>
-              <th>
-                <span class="tooltip">Linking Root Domains
-                  <span class="tooltiptext">The total number of unique websites linking to this domain. A higher number indicates a more diverse, trustworthy, and natural link profile.</span>
-                </span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in rows %}
-              <tr>
-                <td>{{ row.target }}</td>
-                <td>{{ row.domain_authority if row.domain_authority is not none else 'N/A' }}</td>
-                <td>{{ row.root_domains_linking_to_root_domain if row.root_domains_linking_to_root_domain is not none else 'N/A' }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      {% else %}
-        <p class="empty">No domains were found.</p>
-      {% endif %}
+    <div class="card">
+      <h1>{{ title }}</h1>
+      {% if error %}<div class="error">{{ error }}</div>{% endif %}
+      <form method="post">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" required>
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" required>
+        <button type="submit">{{ submit_label }}</button>
+      </form>
+      <p class="meta">
+        <a class="button" href="{{ url_for('index') }}">Back to domains</a>
+      </p>
     </div>
   </body>
 </html>
 """
 
 
-def utc_today() -> date:
-    return datetime.now(timezone.utc).date()
+@login_manager.user_loader
+def load_user(user_id: str):
+    return db.session.get(User, int(user_id))
 
 
-
-def get_database_url() -> str:
-    database_url = (os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL") or "").strip()
-    if not database_url:
-        raise RuntimeError("DATABASE_URL must be set for Postgres-backed daily caching.")
-    return database_url
-
-
-
-def get_db_connection():
-    database_url = get_database_url()
-    if "sslmode=" in database_url:
-        return psycopg2.connect(database_url)
-    return psycopg2.connect(database_url, sslmode="require")
-
-
-
-def ensure_schema(connection) -> None:
-    with connection.cursor() as cursor:
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS domain_metrics_cache (
-                metric_date DATE NOT NULL,
-                domain TEXT NOT NULL,
-                domain_authority DOUBLE PRECISION,
-                linking_root_domains INTEGER,
-                fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                PRIMARY KEY (metric_date, domain)
-            )
-            """
-        )
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS metric_refresh_runs (
-                metric_date DATE PRIMARY KEY,
-                refreshed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            )
-            """
-        )
-    connection.commit()
-
-
-
-def scrape_domains(limit: int = MAX_DOMAINS) -> List[str]:
-    """Fetch the expired-domain page and return up to `limit` unique .se/.nu domains."""
-    response = requests.get(SOURCE_URL, timeout=20)
-    response.raise_for_status()
-
-    soup = BeautifulSoup(response.text, "html.parser")
-    extracted: List[str] = []
-    seen = set()
-
-    for selector in ("table td", "table th", "tbody td", "a", "tr"):
-        for element in soup.select(selector):
-            text = " ".join(element.stripped_strings)
-            for match in DOMAIN_PATTERN.findall(text):
-                domain = match.lower().strip()
-                if domain not in seen:
-                    seen.add(domain)
-                    extracted.append(domain)
-                    if len(extracted) >= limit:
-                        return extracted
-
-    page_text = soup.get_text(" ", strip=True)
-    for match in DOMAIN_PATTERN.findall(page_text):
-        domain = match.lower().strip()
-        if domain not in seen:
-            seen.add(domain)
-            extracted.append(domain)
-            if len(extracted) >= limit:
-                break
-
-    return extracted
-
-
-
-def normalize_domain(value: Optional[str]) -> str:
-    if not value:
-        return ""
-
-    cleaned = value.strip().lower()
-    if cleaned.startswith(("http://", "https://")):
-        parsed = urlparse(cleaned)
-        cleaned = parsed.netloc or parsed.path
-
-    return cleaned.strip().strip("/")
-
-
-
-def get_moz_auth_options() -> List[Dict[str, Any]]:
-    api_token = (os.environ.get("MOZ_API_TOKEN") or os.environ.get("Moz-api-token") or "").strip()
-    if api_token:
-        normalized = api_token.lower()
-        if normalized.startswith("basic ") or normalized.startswith("bearer "):
-            return [{"headers": {"Authorization": api_token}}]
-        if ":" in api_token:
-            access_id, secret_key = api_token.split(":", 1)
-            return [{"auth": HTTPBasicAuth(access_id.strip(), secret_key.strip())}]
-        return [
-            {"headers": {"Authorization": f"Basic {api_token}"}},
-            {"headers": {"x-moz-token": api_token}},
-        ]
-
-    access_id = (os.environ.get("MOZ_ACCESS_ID") or "").strip()
-    secret_key = (os.environ.get("MOZ_SECRET_KEY") or "").strip()
-    if access_id and secret_key:
-        return [{"auth": HTTPBasicAuth(access_id, secret_key)}]
-
-    raise RuntimeError(
-        "Set MOZ_API_TOKEN / Moz-api-token to your Moz token, or set MOZ_ACCESS_ID and MOZ_SECRET_KEY."
-    )
-
-
-
-def pick_metric(item: Dict[str, Any], *keys: str) -> Any:
-    metrics = item.get("metrics") if isinstance(item.get("metrics"), dict) else {}
-    for key in keys:
-        if item.get(key) is not None:
-            return item.get(key)
-        if metrics.get(key) is not None:
-            return metrics.get(key)
-    return None
-
-
-
-def extract_results(data: Any) -> List[Dict[str, Any]]:
-    if isinstance(data, list):
-        return [item for item in data if isinstance(item, dict)]
-    if isinstance(data, dict):
-        for key in ("results", "url_metrics", "data"):
-            value = data.get(key)
-            if isinstance(value, list):
-                return [item for item in value if isinstance(item, dict)]
-        if any(key in data for key in ("target", "domain_authority", "metrics")):
-            return [data]
-    return []
-
-
-
-def fetch_moz_metrics(domains: List[str]) -> List[Dict[str, Any]]:
-    if not domains:
-        return []
-
-    response = None
-    auth_errors = []
-    for index, auth_kwargs in enumerate(get_moz_auth_options(), start=1):
-        candidate = requests.post(
-            MOZ_API_URL,
-            json={"targets": domains},
-            timeout=30,
-            **auth_kwargs,
-        )
-        if candidate.ok:
-            response = candidate
-            break
-        if candidate.status_code in (401, 403):
-            auth_errors.append(f"option {index} returned {candidate.status_code}")
-            continue
-        candidate.raise_for_status()
-
-    if response is None:
-        raise RuntimeError(
-            "Moz authentication failed. Tried: " + "; ".join(auth_errors or ["no auth options available"])
-        )
-
-    results = extract_results(response.json())
-    app.logger.info("Moz returned %s metric rows for %s targets.", len(results), len(domains))
-
-    output: List[Dict[str, Any]] = []
-    for index, domain in enumerate(domains):
-        item = results[index] if index < len(results) else {}
-        target = normalize_domain(
-            item.get("target")
-            or item.get("normalized_target")
-            or item.get("url")
-            or item.get("page")
-            or domain
-        )
-        output.append(
-            {
-                "target": target or normalize_domain(domain),
-                "domain_authority": pick_metric(item, "domain_authority"),
-                "root_domains_linking_to_root_domain": pick_metric(
-                    item,
-                    "root_domains_linking_to_root_domain",
-                    "root_domains_to_root_domain",
-                    "linking_root_domains",
-                ),
-            }
-        )
-
-    return output
-
-
-
-def upsert_daily_metrics(connection, metric_date, rows: List[Dict[str, Any]]) -> None:
-    payload = [
-        (
-            metric_date,
-            row["target"],
-            row.get("domain_authority"),
-            row.get("root_domains_linking_to_root_domain"),
-        )
-        for row in rows
-    ]
-    if not payload:
-        return
-
-    with connection.cursor() as cursor:
-        execute_values(
-            cursor,
-            """
-            INSERT INTO domain_metrics_cache (
-                metric_date,
-                domain,
-                domain_authority,
-                linking_root_domains,
-                fetched_at
-            ) VALUES %s
-            ON CONFLICT (metric_date, domain)
-            DO UPDATE SET
-                domain_authority = EXCLUDED.domain_authority,
-                linking_root_domains = EXCLUDED.linking_root_domains,
-                fetched_at = NOW()
-            """,
-            payload,
-            template="(%s, %s, %s, %s, NOW())",
-        )
-    connection.commit()
-
-
-
-def mark_refresh_complete(connection, metric_date) -> None:
-    with connection.cursor() as cursor:
-        cursor.execute(
-            """
-            INSERT INTO metric_refresh_runs (metric_date, refreshed_at)
-            VALUES (%s, NOW())
-            ON CONFLICT (metric_date)
-            DO UPDATE SET refreshed_at = EXCLUDED.refreshed_at
-            """,
-            (metric_date,),
-        )
-    connection.commit()
-
-
-
-def has_refresh_run(connection, metric_date) -> bool:
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT 1 FROM metric_refresh_runs WHERE metric_date = %s", (metric_date,))
-        return cursor.fetchone() is not None
-
-
-
-def load_metrics_for_date(connection, metric_date, domains: List[str]) -> List[Dict[str, Any]]:
-    if not domains:
-        return []
-
-    with connection.cursor(cursor_factory=RealDictCursor) as cursor:
-        cursor.execute(
-            """
-            SELECT domain, domain_authority, linking_root_domains
-            FROM domain_metrics_cache
-            WHERE metric_date = %s AND domain = ANY(%s)
-            """,
-            (metric_date, domains),
-        )
-        records = cursor.fetchall()
-
-    metrics_by_domain = {
-        normalize_domain(record["domain"]): {
-            "target": normalize_domain(record["domain"]),
-            "domain_authority": record["domain_authority"],
-            "root_domains_linking_to_root_domain": record["linking_root_domains"],
-        }
-        for record in records
-    }
-
-    return [
-        metrics_by_domain.get(
-            normalize_domain(domain),
-            {
-                "target": normalize_domain(domain),
-                "domain_authority": None,
-                "root_domains_linking_to_root_domain": None,
-            },
-        )
-        for domain in domains
-    ]
-
-
-
-def sort_rows_by_domain_authority(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    return sorted(
-        rows,
-        key=lambda row: (
-            row.get("domain_authority") is None,
-            -(row.get("domain_authority") or 0),
-        ),
-    )
-
-
-
-def get_daily_cached_metrics(domains: List[str]) -> List[Dict[str, Any]]:
-    metric_date = utc_today()
-
-    with get_db_connection() as connection:
-        ensure_schema(connection)
-
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT pg_advisory_lock(%s)", (REFRESH_LOCK_ID,))
-
-        try:
-            if not has_refresh_run(connection, metric_date):
-                fresh_rows = fetch_moz_metrics(domains)
-                upsert_daily_metrics(connection, metric_date, fresh_rows)
-                mark_refresh_complete(connection, metric_date)
-                app.logger.info("Stored %s Moz rows for %s.", len(fresh_rows), metric_date)
-
-            return load_metrics_for_date(connection, metric_date, domains)
-        finally:
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT pg_advisory_unlock(%s)", (REFRESH_LOCK_ID,))
+with app.app_context():
+    db.create_all()
 
 
 @app.route("/")
 def index():
-    rows: List[Dict[str, Any]] = []
-    domains: List[str] = []
+    today = datetime.now(timezone.utc).date()
+    query = Domain.query.filter_by(fetch_date=today).order_by(Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc())
+
+    if not current_user.is_authenticated or not current_user.is_premium:
+        domains = query.limit(25).all()
+        is_limited = True
+    else:
+        domains = query.all()
+        is_limited = False
+
+    return render_template("index.html", domains=domains, is_limited=is_limited)
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
     error = None
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+
+        if not email or not password:
+            error = "Email and password are required."
+        elif User.query.filter_by(email=email).first():
+            error = "An account with that email already exists."
+        else:
+            user = User(email=email)
+            user.set_password(password)
+            db.session.add(user)
+            db.session.commit()
+            login_user(user)
+            return redirect(url_for("index"))
+
+    return render_template_string(AUTH_TEMPLATE, title="Register", submit_label="Create account", error=error)
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        user = User.query.filter_by(email=email).first()
+
+        if user is None or not user.check_password(password):
+            error = "Invalid email or password."
+        else:
+            login_user(user)
+            return redirect(url_for("index"))
+
+    return render_template_string(AUTH_TEMPLATE, title="Login", submit_label="Sign in", error=error)
+
+
+@app.route("/logout")
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for("index"))
+
+
+@app.route("/checkout")
+@login_required
+def checkout():
+    if current_user.is_premium:
+        return redirect(url_for("index"))
+
+    price_id = os.environ.get("STRIPE_PRICE_ID", "")
+    if not stripe.api_key or not price_id:
+        abort(500, "Stripe is not configured. Set STRIPE_SECRET_KEY and STRIPE_PRICE_ID.")
+
+    checkout_session = stripe.checkout.Session.create(
+        mode="subscription",
+        line_items=[{"price": price_id, "quantity": 1}],
+        success_url=url_for("index", _external=True) + "?checkout=success",
+        cancel_url=url_for("index", _external=True),
+        client_reference_id=str(current_user.id),
+        customer_email=current_user.email,
+        metadata={"user_id": str(current_user.id)},
+    )
+    return redirect(checkout_session.url, code=303)
+
+
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    payload = request.get_data(as_text=False)
+    signature = request.headers.get("Stripe-Signature", "")
+    webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 
     try:
-        domains = scrape_domains()
+        if webhook_secret:
+            event = stripe.Webhook.construct_event(payload, signature, webhook_secret)
+        else:
+            event = request.get_json(force=True)
     except Exception as exc:
-        error = str(exc)
-        return render_template_string(TEMPLATE, rows=rows, error=error, scraped_count=0)
+        return {"error": str(exc)}, 400
 
-    try:
-        rows = sort_rows_by_domain_authority(get_daily_cached_metrics(domains))
-    except Exception as exc:
-        error = str(exc)
-        rows = sort_rows_by_domain_authority(
-            [
-                {
-                    "target": domain,
-                    "domain_authority": None,
-                    "root_domains_linking_to_root_domain": None,
-                }
-                for domain in domains
-            ]
-        )
+    if event.get("type") == "checkout.session.completed":
+        session = event["data"]["object"]
+        user = None
 
-    return render_template_string(TEMPLATE, rows=rows, error=error, scraped_count=len(domains))
+        client_reference_id = session.get("client_reference_id")
+        if client_reference_id and str(client_reference_id).isdigit():
+            user = db.session.get(User, int(client_reference_id))
+
+        if user is None:
+            email = (
+                (session.get("customer_details") or {}).get("email")
+                or session.get("customer_email")
+            )
+            if email:
+                user = User.query.filter_by(email=email.lower()).first()
+
+        if user is not None:
+            user.is_premium = True
+            user.stripe_customer_id = session.get("customer")
+            db.session.commit()
+
+    return {"status": "ok"}, 200
 
 
 if __name__ == "__main__":
