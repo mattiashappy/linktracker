@@ -160,12 +160,24 @@ def fetch_moz_metrics(domains: List[str]) -> List[Dict[str, Any]]:
 def refresh_daily_domains() -> None:
     today = datetime.now(timezone.utc).date()
     domains = scrape_domains()
+    if not domains:
+        raise RuntimeError("No domains were scraped. Existing database rows were preserved.")
+
     metrics = fetch_moz_metrics(domains)
+    if not metrics:
+        metrics = [
+            {
+                "domain_name": normalize_domain(domain),
+                "da": None,
+                "linking_root_domains": None,
+            }
+            for domain in domains
+        ]
 
     with app.app_context():
         db.create_all()
-        Domain.query.filter(Domain.fetch_date < today).delete()
         Domain.query.filter_by(fetch_date=today).delete()
+        Domain.query.filter(Domain.fetch_date < today).delete()
 
         for item in metrics:
             db.session.add(
