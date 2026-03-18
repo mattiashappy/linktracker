@@ -58,6 +58,35 @@ TEMPLATE = """
         background: #111827;
         color: #ffffff;
       }
+      .tooltip {
+        position: relative;
+        display: inline-block;
+        cursor: help;
+        border-bottom: 1px dotted rgba(255, 255, 255, 0.7);
+      }
+      .tooltip .tooltiptext {
+        visibility: hidden;
+        width: 280px;
+        background: #1f2937;
+        color: #ffffff;
+        text-align: left;
+        border-radius: 8px;
+        padding: 10px 12px;
+        position: absolute;
+        z-index: 1;
+        bottom: 125%;
+        left: 50%;
+        margin-left: -140px;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);
+        font-weight: normal;
+        line-height: 1.4;
+        opacity: 0;
+        transition: opacity 0.2s ease-in-out;
+      }
+      .tooltip:hover .tooltiptext {
+        visibility: visible;
+        opacity: 1;
+      }
       tr:nth-child(even) {
         background: #f9fafb;
       }
@@ -89,8 +118,16 @@ TEMPLATE = """
           <thead>
             <tr>
               <th>Domain</th>
-              <th>Domain Authority (DA)</th>
-              <th>Linking Root Domains</th>
+              <th>
+                <span class="tooltip">Domain Authority (DA)
+                  <span class="tooltiptext">1-100 score predicting how well a website will rank on search engines. Based largely on link quality. Higher is better.</span>
+                </span>
+              </th>
+              <th>
+                <span class="tooltip">Linking Root Domains
+                  <span class="tooltiptext">The total number of unique websites linking to this domain. A higher number indicates a more diverse, trustworthy, and natural link profile.</span>
+                </span>
+              </th>
             </tr>
           </thead>
           <tbody>
