@@ -163,22 +163,25 @@ def normalize_domain(value: Optional[str]) -> str:
 
 
 
-def get_moz_auth_kwargs() -> Dict[str, Any]:
+def get_moz_auth_options() -> List[Dict[str, Any]]:
     """Build Moz request auth settings from environment variables."""
     api_token = (os.environ.get("MOZ_API_TOKEN") or os.environ.get("Moz-api-token") or "").strip()
     if api_token:
         normalized = api_token.lower()
         if normalized.startswith("basic ") or normalized.startswith("bearer "):
-            return {"headers": {"Authorization": api_token}}
+            return [{"headers": {"Authorization": api_token}}]
         if ":" in api_token:
             access_id, secret_key = api_token.split(":", 1)
-            return {"auth": HTTPBasicAuth(access_id.strip(), secret_key.strip())}
-        return {"headers": {"x-moz-token": api_token}}
+            return [{"auth": HTTPBasicAuth(access_id.strip(), secret_key.strip())}]
+        return [
+            {"headers": {"Authorization": f"Basic {api_token}"}},
+            {"headers": {"x-moz-token": api_token}},
+        ]
 
     access_id = (os.environ.get("MOZ_ACCESS_ID") or "").strip()
     secret_key = (os.environ.get("MOZ_SECRET_KEY") or "").strip()
     if access_id and secret_key:
-        return {"auth": HTTPBasicAuth(access_id, secret_key)}
+        return [{"auth": HTTPBasicAuth(access_id, secret_key)}]
 
     raise RuntimeError(
         "Set MOZ_API_TOKEN / Moz-api-token to your Moz token, or set MOZ_ACCESS_ID and MOZ_SECRET_KEY."
@@ -216,13 +219,28 @@ def fetch_moz_metrics(domains: List[str]) -> List[Dict[str, Any]]:
     if not domains:
         return []
 
-    response = requests.post(
-        MOZ_API_URL,
-        json={"targets": domains},
-        timeout=30,
-        **get_moz_auth_kwargs(),
-    )
-    response.raise_for_status()
+    response = None
+    auth_errors = []
+    auth_options = get_moz_auth_options()
+    for index, auth_kwargs in enumerate(auth_options, start=1):
+        candidate = requests.post(
+            MOZ_API_URL,
+            json={"targets": domains},
+            timeout=30,
+            **auth_kwargs,
+        )
+        if candidate.ok:
+            response = candidate
+            break
+        if candidate.status_code in (401, 403):
+            auth_errors.append(f"option {index} returned {candidate.status_code}")
+            continue
+        candidate.raise_for_status()
+
+    if response is None:
+        raise RuntimeError(
+            "Moz authentication failed. Tried: " + "; ".join(auth_errors or ["no auth options available"])
+        )
 
     data = response.json()
     results = extract_results(data)
