@@ -311,6 +311,16 @@ def fetch_moz_metrics(domains: List[str]) -> List[Dict[str, Any]]:
     return output
 
 
+def sort_rows_by_domain_authority(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return sorted(
+        rows,
+        key=lambda row: (
+            row.get("domain_authority") is None,
+            -(row.get("domain_authority") or 0),
+        ),
+    )
+
+
 @app.route("/")
 def index():
     rows: List[Dict[str, Any]] = []
@@ -324,17 +334,17 @@ def index():
         return render_template_string(TEMPLATE, rows=rows, error=error, scraped_count=0)
 
     try:
-        rows = fetch_moz_metrics(domains)
+        rows = sort_rows_by_domain_authority(fetch_moz_metrics(domains))
     except Exception as exc:  # Show scraped domains even if Moz metrics fail.
         error = str(exc)
-        rows = [
+        rows = sort_rows_by_domain_authority([
             {
                 "target": domain,
                 "domain_authority": None,
                 "root_domains_linking_to_root_domain": None,
             }
             for domain in domains
-        ]
+        ])
 
     return render_template_string(TEMPLATE, rows=rows, error=error, scraped_count=len(domains))
 
