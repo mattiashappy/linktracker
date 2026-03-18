@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Expired Domains with Moz Metrics</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background: #f4f7fb;
+        color: #1f2937;
+        margin: 0;
+        padding: 24px;
+      }
+      .container {
+        max-width: 1120px;
+        margin: 0 auto;
+        background: #ffffff;
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+        padding: 24px;
+      }
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+      .actions {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .btn {
+        display: inline-block;
+        padding: 10px 14px;
+        border-radius: 8px;
+        text-decoration: none;
+        border: 0;
+        cursor: pointer;
+      }
+      .btn-dark {
+        background: #111827;
+        color: #ffffff;
+      }
+      .btn-outline {
+        background: #ffffff;
+        color: #111827;
+        border: 1px solid #d1d5db;
+      }
+      .btn-green {
+        background: #059669;
+        color: #ffffff;
+      }
+      .premium-box {
+        margin-top: 18px;
+        padding: 16px;
+        border-radius: 10px;
+        background: #eff6ff;
+        border: 1px solid #bfdbfe;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+      }
+      th, td {
+        text-align: left;
+        padding: 12px 14px;
+        border-bottom: 1px solid #e5e7eb;
+      }
+      th {
+        background: #111827;
+        color: #ffffff;
+      }
+      tr:nth-child(even) {
+        background: #f9fafb;
+      }
+      .tooltip {
+        position: relative;
+        display: inline-block;
+        cursor: help;
+        border-bottom: 1px dotted rgba(255, 255, 255, 0.7);
+      }
+      .tooltip .tooltiptext {
+        visibility: hidden;
+        width: 280px;
+        background: #1f2937;
+        color: #ffffff;
+        text-align: left;
+        border-radius: 8px;
+        padding: 10px 12px;
+        position: absolute;
+        z-index: 1;
+        bottom: 125%;
+        left: 50%;
+        margin-left: -140px;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);
+        font-weight: normal;
+        line-height: 1.4;
+        opacity: 0;
+        transition: opacity 0.2s ease-in-out;
+      }
+      .tooltip:hover .tooltiptext {
+        visibility: visible;
+        opacity: 1;
+      }
+      .empty {
+        margin-top: 16px;
+        color: #6b7280;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="topbar">
+        <div>
+          <h1>Expired Domains with Moz Metrics</h1>
+          <p>Daily domains are fetched from the database and sorted by highest Domain Authority first.</p>
+          {% if using_latest_available %}
+            <p><strong>Showing the latest available list from {{ active_date }}.</strong></p>
+          {% endif %}
+        </div>
+        <div class="actions">
+          {% if current_user.is_authenticated %}
+            <span>{{ current_user.email }}{% if current_user.is_premium %} · Premium{% endif %}</span>
+            <a class="btn btn-outline" href="{{ url_for('logout') }}">Logout</a>
+          {% else %}
+            <a class="btn btn-outline" href="{{ url_for('login') }}">Login</a>
+            <a class="btn btn-dark" href="{{ url_for('register') }}">Register</a>
+          {% endif %}
+        </div>
+      </div>
+
+      {% if domains %}
+        <table>
+          <thead>
+            <tr>
+              <th>Domain</th>
+              <th>
+                <span class="tooltip">Domain Authority (DA)
+                  <span class="tooltiptext">1-100 score predicting how well a website will rank on search engines. Based largely on link quality. Higher is better.</span>
+                </span>
+              </th>
+              <th>
+                <span class="tooltip">Linking Root Domains
+                  <span class="tooltiptext">The total number of unique websites linking to this domain. A higher number indicates a more diverse, trustworthy, and natural link profile.</span>
+                </span>
+              </th>
+              <th>Buy domain</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for domain in domains %}
+              <tr>
+                <td>{{ domain.domain_name }}</td>
+                <td>{{ domain.da if domain.da is not none else 'N/A' }}</td>
+                <td>{{ domain.linking_root_domains if domain.linking_root_domains is not none else 'N/A' }}</td>
+                <td>
+                  <a class="btn btn-green" href="https://inleed.se/r/1890482385" target="_blank">Buy domain</a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="empty">No domains have been fetched for today yet.</p>
+      {% endif %}
+
+      {% if is_limited %}
+        <div class="premium-box">
+          <strong>You are seeing 25 free domains today.</strong>
+          <div style="margin-top: 8px;">There are {{ hidden_count }} more domains available. Upgrade to Premium to unlock the full daily list.</div>
+          {% if current_user.is_authenticated %}
+            <div style="margin-top: 12px;">
+              <a class="btn btn-dark" href="{{ url_for('checkout') }}">Upgrade Now</a>
+            </div>
+          {% else %}
+            <div style="margin-top: 12px; display: flex; gap: 12px; flex-wrap: wrap;">
+              <a class="btn btn-outline" href="{{ url_for('login') }}">Login</a>
+              <a class="btn btn-dark" href="{{ url_for('register') }}">Register to upgrade</a>
+            </div>
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>
+  </body>
+</html>
