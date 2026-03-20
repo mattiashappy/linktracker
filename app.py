@@ -8,10 +8,12 @@ import stripe
 from bs4 import BeautifulSoup
 from flask import Flask, abort, redirect, render_template, render_template_string, request, url_for
 from flask_login import LoginManager, current_user, login_required, login_user, logout_user
+from requests.auth import HTTPBasicAuth
 
 from models import Domain, User, db
 
 SOURCE_URL = "https://www.rymdweb.com/domain/snapback/?action=date"
+MOZ_API_URL = "https://lsapi.seomoz.com/v2/url_metrics"
 REQUEST_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
     "Accept-Language": "en-US,en;q=0.9,sv;q=0.8",
@@ -70,6 +72,136 @@ def scrape_domains(limit: int | None = None):
                 break
 
     return extracted
+
+
+
+def get_moz_auth_options():
+    api_token = (os.environ.get("MOZ_API_TOKEN") or os.environ.get("Moz-api-token") or "").strip()
+    if api_token:
+        normalized = api_token.lower()
+        if normalized.startswith("basic ") or normalized.startswith("bearer "):
+            return [{"headers": {"Authorization": api_token}}]
+        if ":" in api_token:
+            access_id, secret_key = api_token.split(":", 1)
+            return [{"auth": HTTPBasicAuth(access_id.strip(), secret_key.strip())}]
+        return [
+            {"headers": {"Authorization": f"Basic {api_token}"}},
+            {"headers": {"x-moz-token": api_token}},
+        ]
+
+    access_id = (os.environ.get("MOZ_ACCESS_ID") or "").strip()
+    secret_key = (os.environ.get("MOZ_SECRET_KEY") or "").strip()
+    if access_id and secret_key:
+        return [{"auth": HTTPBasicAuth(access_id, secret_key)}]
+
+    return []
+
+
+
+def pick_metric(item, *keys):
+    metrics = item.get("metrics") if isinstance(item.get("metrics"), dict) else {}
+    for key in keys:
+        if item.get(key) is not None:
+            return item.get(key)
+        if metrics.get(key) is not None:
+            return metrics.get(key)
+    return None
+
+
+
+def extract_results(data):
+    if isinstance(data, list):
+        return [item for item in data if isinstance(item, dict)]
+    if isinstance(data, dict):
+        for key in ("results", "url_metrics", "data"):
+            value = data.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)]
+        if any(key in data for key in ("target", "domain_authority", "metrics")):
+            return [data]
+    return []
+
+
+
+def fetch_moz_metrics(domains):
+    if not domains:
+        return []
+
+    auth_options = get_moz_auth_options()
+    if not auth_options:
+        return []
+
+    moz_targets = [domain if domain.startswith(("http://", "https://")) else f"https://{domain}" for domain in domains]
+    response = None
+    for auth_kwargs in auth_options:
+        candidate = requests.post(
+            MOZ_API_URL,
+            json={"targets": moz_targets},
+            timeout=30,
+            **auth_kwargs,
+        )
+        if candidate.ok:
+            response = candidate
+            break
+        if candidate.status_code not in (401, 403):
+            candidate.raise_for_status()
+
+    if response is None:
+        return []
+
+    results = extract_results(response.json())
+    output = []
+    for index, domain in enumerate(domains):
+        item = results[index] if index < len(results) else {}
+        output.append(
+            {
+                "domain_name": domain,
+                "da": pick_metric(item, "domain_authority"),
+                "linking_root_domains": pick_metric(
+                    item,
+                    "root_domains_linking_to_root_domain",
+                    "root_domains_to_root_domain",
+                    "linking_root_domains",
+                ),
+            }
+        )
+    return output
+
+
+
+def hydrate_visible_domains(domains, fetch_date):
+    metrics = fetch_moz_metrics([domain.domain_name for domain in domains])
+    if not metrics:
+        return domains
+
+    metrics_by_domain = {item["domain_name"]: item for item in metrics}
+    any_values = False
+    for domain in domains:
+        metric = metrics_by_domain.get(domain.domain_name)
+        if metric is None:
+            continue
+        domain.da = metric["da"]
+        domain.linking_root_domains = metric["linking_root_domains"]
+        if domain.da is not None or domain.linking_root_domains is not None:
+            any_values = True
+
+    if any_values and fetch_date is not None:
+        if db.session.get_bind() is not None:
+            if not Domain.query.filter_by(fetch_date=fetch_date).first():
+                for domain in domains:
+                    db.session.add(
+                        Domain(
+                            domain_name=domain.domain_name,
+                            da=domain.da,
+                            linking_root_domains=domain.linking_root_domains,
+                            fetch_date=fetch_date,
+                        )
+                    )
+                db.session.commit()
+            else:
+                db.session.commit()
+
+    return domains
 
 AUTH_TEMPLATE = """
 <!doctype html>
@@ -141,8 +273,12 @@ def index():
             SimpleNamespace(domain_name=domain, da=None, linking_root_domains=None)
             for domain in visible_domains
         ]
+        domains = hydrate_visible_domains(domains, today)
         hidden_count = max(total_domains - len(domains), 0)
         using_live_fallback = bool(scraped_domains)
+        if any(domain.da is not None or domain.linking_root_domains is not None for domain in domains):
+            active_date = today
+            using_live_fallback = False
     else:
         query = Domain.query.filter_by(fetch_date=active_date).order_by(
             Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc()
@@ -157,6 +293,8 @@ def index():
             is_limited = False
 
         hidden_count = max(total_domains - len(domains), 0)
+        if any(domain.da is None and domain.linking_root_domains is None for domain in domains):
+            domains = hydrate_visible_domains(domains, active_date)
 
     return render_template(
         "index.html",
