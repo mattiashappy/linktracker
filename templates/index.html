@@ -151,7 +151,6 @@
                   <span class="tooltiptext">The total number of unique websites linking to this domain. A higher number indicates a more diverse, trustworthy, and natural link profile.</span>
                 </span>
               </th>
-              <th>Buy domain</th>
             </tr>
           </thead>
           <tbody>
@@ -160,9 +159,6 @@
                 <td>{{ domain.domain_name }}</td>
                 <td>{{ domain.da if domain.da is not none else 'N/A' }}</td>
                 <td>{{ domain.linking_root_domains if domain.linking_root_domains is not none else 'N/A' }}</td>
-                <td>
-                  <a class="btn btn-green" href="https://inleed.se/r/1890482385" target="_blank">Buy domain</a>
-                </td>
               </tr>
             {% endfor %}
           </tbody>
