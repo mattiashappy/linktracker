@@ -375,8 +375,8 @@ AUTH_TEMPLATE = """
       <h1>{{ title }}</h1>
       {% if error %}<div class="error">{{ error }}</div>{% endif %}
       <form method="post">
-        <label for="email">Email</label>
-        <input id="email" name="email" type="email" required>
+        <label for="email">{{ identifier_label or 'Email' }}</label>
+        <input id="email" name="email" type="{{ identifier_type or 'email' }}" required>
         <label for="password">Password</label>
         <input id="password" name="password" type="password" required>
         <button type="submit">{{ submit_label }}</button>
@@ -490,24 +490,43 @@ def register():
             login_user(user)
             return redirect(url_for("index"))
 
-    return render_template_string(AUTH_TEMPLATE, title="Register", submit_label="Create account", error=error)
+    return render_template_string(
+        AUTH_TEMPLATE,
+        title="Register",
+        submit_label="Create account",
+        error=error,
+        identifier_label="Email",
+        identifier_type="email",
+    )
 
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
     error = None
     if request.method == "POST":
-        email = request.form.get("email", "").strip().lower()
+        identifier = request.form.get("email", "").strip()
         password = request.form.get("password", "")
-        user = User.query.filter_by(email=email).first()
+        admin_username, admin_password = get_admin_credentials()
 
+        if admin_username and admin_password and identifier == admin_username and password == admin_password:
+            session["is_admin"] = True
+            return redirect(url_for("admin"))
+
+        user = User.query.filter_by(email=identifier.lower()).first()
         if user is None or not user.check_password(password):
-            error = "Invalid email or password."
+            error = "Invalid login credentials."
         else:
             login_user(user)
             return redirect(url_for("index"))
 
-    return render_template_string(AUTH_TEMPLATE, title="Login", submit_label="Sign in", error=error)
+    return render_template_string(
+        AUTH_TEMPLATE,
+        title="Login",
+        submit_label="Sign in",
+        error=error,
+        identifier_label="Email or username",
+        identifier_type="text",
+    )
 
 
 @app.route("/logout")
@@ -524,37 +543,23 @@ def user_page():
 
 @app.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
-    error = None
-    if request.method == "POST":
-        submitted_username = request.form.get("username", "").strip()
-        submitted_password = request.form.get("password", "")
-        admin_username, admin_password = get_admin_credentials()
-
-        if not admin_username or not admin_password:
-            error = "Admin credentials are not configured in Heroku."
-        elif submitted_username == admin_username and submitted_password == admin_password:
-            session["is_admin"] = True
-            return redirect(url_for("admin"))
-        else:
-            error = "Invalid admin credentials."
-
-    return render_template_string(ADMIN_LOGIN_TEMPLATE, error=error)
+    return redirect(url_for("login"))
 
 
 @app.route("/admin/logout")
 def admin_logout():
     session.pop("is_admin", None)
-    return redirect(url_for("admin_login"))
+    return redirect(url_for("login"))
 
 
 @app.route("/admin")
 def admin():
     if not session.get("is_admin"):
-        return redirect(url_for("admin_login"))
+        return redirect(url_for("login"))
 
     today = datetime.now(timezone.utc).date()
     users = User.query.order_by(User.id.desc()).all()
-    domains = Domain.query.order_by(Domain.fetch_date.desc(), Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc()).limit(100).all()
+    domains = Domain.query.order_by(Domain.fetch_date.desc(), Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc()).all()
     total_users = User.query.count()
     premium_users = User.query.filter_by(is_premium=True).count()
     today_domains = Domain.query.filter_by(fetch_date=today).count()
