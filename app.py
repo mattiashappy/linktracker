@@ -223,6 +223,34 @@ def hydrate_visible_domains(domains, fetch_date):
 
 
 
+
+
+def ensure_today_domain_snapshot(scraped_domains, visible_domains, fetch_date):
+    if not scraped_domains or fetch_date is None:
+        return
+
+    existing_rows = Domain.query.filter_by(fetch_date=fetch_date).all()
+    if len(existing_rows) >= len(scraped_domains):
+        return
+
+    existing_domains = {row.domain_name for row in existing_rows}
+    visible_map = {domain.domain_name: domain for domain in visible_domains}
+
+    for domain_name in scraped_domains:
+        if domain_name in existing_domains:
+            continue
+        visible_row = visible_map.get(domain_name)
+        db.session.add(
+            Domain(
+                domain_name=domain_name,
+                da=getattr(visible_row, "da", None),
+                linking_root_domains=getattr(visible_row, "linking_root_domains", None),
+                fetch_date=fetch_date,
+            )
+        )
+
+    db.session.commit()
+
 USER_TEMPLATE = """
 <!doctype html>
 <html lang="en">
@@ -436,6 +464,7 @@ def index():
             for domain in visible_domains
         ]
         domains = hydrate_visible_domains(domains, today)
+        ensure_today_domain_snapshot(scraped_domains, domains, today)
         hidden_count = max(total_domains - len(domains), 0)
         using_live_fallback = bool(scraped_domains)
         if any(domain.da is not None or domain.linking_root_domains is not None for domain in domains):
@@ -558,6 +587,14 @@ def admin():
         return redirect(url_for("login"))
 
     today = datetime.now(timezone.utc).date()
+    today_rows = Domain.query.filter_by(fetch_date=today).order_by(Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc()).all()
+    if len(today_rows) <= 25:
+        try:
+            scraped_domains = scrape_domains()
+            ensure_today_domain_snapshot(scraped_domains, today_rows, today)
+        except Exception:
+            pass
+
     users = User.query.order_by(User.id.desc()).all()
     domains = Domain.query.order_by(Domain.fetch_date.desc(), Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc()).all()
     total_users = User.query.count()
