@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import requests
 import stripe
 from bs4 import BeautifulSoup
-from flask import Flask, abort, redirect, render_template, render_template_string, request, url_for
+from flask import Flask, abort, redirect, render_template, render_template_string, request, session, url_for
 from flask_login import LoginManager, current_user, login_required, login_user, logout_user
 from requests.auth import HTTPBasicAuth
 
@@ -221,6 +221,139 @@ def hydrate_visible_domains(domains, fetch_date):
 
     return domains
 
+
+
+USER_TEMPLATE = """
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>User Page</title>
+    <style>
+      body { font-family: Arial, sans-serif; background: #f4f7fb; padding: 32px; color: #1f2937; }
+      .card { max-width: 720px; margin: 0 auto; background: #fff; padding: 24px; border-radius: 12px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08); }
+      .row { margin-bottom: 14px; }
+      .label { font-weight: bold; }
+      a.button { display: inline-block; background: #111827; color: #fff; padding: 12px 16px; border-radius: 8px; text-decoration: none; margin-right: 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>User Page</h1>
+      <div class="row"><span class="label">Email:</span> {{ user.email }}</div>
+      <div class="row"><span class="label">Premium:</span> {{ 'Yes' if user.is_premium else 'No' }}</div>
+      <div class="row"><span class="label">Stripe customer:</span> {{ user.stripe_customer_id or 'Not connected yet' }}</div>
+      <div class="row">
+        {% if not user.is_premium %}
+          <a class="button" href="{{ url_for('checkout') }}">Upgrade to Premium</a>
+        {% endif %}
+        <a class="button" href="{{ url_for('index') }}">Back to domains</a>
+      </div>
+    </div>
+  </body>
+</html>
+"""
+
+ADMIN_LOGIN_TEMPLATE = """
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Admin Login</title>
+    <style>
+      body { font-family: Arial, sans-serif; background: #f4f7fb; padding: 32px; color: #1f2937; }
+      .card { max-width: 420px; margin: 0 auto; background: #fff; padding: 24px; border-radius: 12px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08); }
+      input { width: 100%; padding: 12px; margin: 8px 0 14px; border: 1px solid #d1d5db; border-radius: 8px; box-sizing: border-box; }
+      button, a.button { display: inline-block; background: #111827; color: #fff; padding: 12px 16px; border-radius: 8px; text-decoration: none; border: 0; cursor: pointer; }
+      .error { margin-bottom: 14px; color: #b91c1c; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Admin Login</h1>
+      {% if error %}<div class="error">{{ error }}</div>{% endif %}
+      <form method="post">
+        <label for="username">Username</label>
+        <input id="username" name="username" type="text" required>
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" required>
+        <button type="submit">Login</button>
+      </form>
+      <p><a class="button" href="{{ url_for('index') }}">Back to domains</a></p>
+    </div>
+  </body>
+</html>
+"""
+
+ADMIN_TEMPLATE = """
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Admin Page</title>
+    <style>
+      body { font-family: Arial, sans-serif; background: #f4f7fb; padding: 32px; color: #1f2937; }
+      .card { max-width: 1100px; margin: 0 auto; background: #fff; padding: 24px; border-radius: 12px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08); }
+      .stats { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+      .stat { background: #f9fafb; padding: 16px; border-radius: 10px; min-width: 180px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+      th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #e5e7eb; }
+      th { background: #111827; color: #fff; }
+      a.button { display: inline-block; background: #111827; color: #fff; padding: 12px 16px; border-radius: 8px; text-decoration: none; margin-right: 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Admin Page</h1>
+      <div class="stats">
+        <div class="stat"><strong>Total users</strong><br>{{ total_users }}</div>
+        <div class="stat"><strong>Premium users</strong><br>{{ premium_users }}</div>
+        <div class="stat"><strong>Today's domains</strong><br>{{ today_domains }}</div>
+      </div>
+      <p>
+        <a class="button" href="{{ url_for('index') }}">Back to domains</a>
+        <a class="button" href="{{ url_for('admin_logout') }}">Admin logout</a>
+      </p>
+      <h2>Users</h2>
+      <table>
+        <thead>
+          <tr><th>ID</th><th>Email</th><th>Premium</th><th>Stripe Customer</th></tr>
+        </thead>
+        <tbody>
+          {% for user in users %}
+            <tr>
+              <td>{{ user.id }}</td>
+              <td>{{ user.email }}</td>
+              <td>{{ 'Yes' if user.is_premium else 'No' }}</td>
+              <td>{{ user.stripe_customer_id or '—' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <h2>Latest domains</h2>
+      <table>
+        <thead>
+          <tr><th>Domain</th><th>DA</th><th>Linking Root Domains</th><th>Fetch Date</th></tr>
+        </thead>
+        <tbody>
+          {% for domain in domains %}
+            <tr>
+              <td>{{ domain.domain_name }}</td>
+              <td>{{ domain.da if domain.da is not none else 'N/A' }}</td>
+              <td>{{ domain.linking_root_domains if domain.linking_root_domains is not none else 'N/A' }}</td>
+              <td>{{ domain.fetch_date }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </body>
+</html>
+"""
+
 AUTH_TEMPLATE = """
 <!doctype html>
 <html lang="en">
@@ -256,6 +389,13 @@ AUTH_TEMPLATE = """
 </html>
 """
 
+
+
+
+def get_admin_credentials():
+    admin_username = (os.environ.get("username") or os.environ.get("ADMIN_USERNAME") or "").strip()
+    admin_password = (os.environ.get("user_password") or os.environ.get("ADMIN_PASSWORD") or "").strip()
+    return admin_username, admin_password
 
 @login_manager.user_loader
 def load_user(user_id: str):
@@ -375,6 +515,59 @@ def login():
 def logout():
     logout_user()
     return redirect(url_for("index"))
+
+@app.route("/user")
+@login_required
+def user_page():
+    return render_template_string(USER_TEMPLATE, user=current_user)
+
+
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    error = None
+    if request.method == "POST":
+        submitted_username = request.form.get("username", "").strip()
+        submitted_password = request.form.get("password", "")
+        admin_username, admin_password = get_admin_credentials()
+
+        if not admin_username or not admin_password:
+            error = "Admin credentials are not configured in Heroku."
+        elif submitted_username == admin_username and submitted_password == admin_password:
+            session["is_admin"] = True
+            return redirect(url_for("admin"))
+        else:
+            error = "Invalid admin credentials."
+
+    return render_template_string(ADMIN_LOGIN_TEMPLATE, error=error)
+
+
+@app.route("/admin/logout")
+def admin_logout():
+    session.pop("is_admin", None)
+    return redirect(url_for("admin_login"))
+
+
+@app.route("/admin")
+def admin():
+    if not session.get("is_admin"):
+        return redirect(url_for("admin_login"))
+
+    today = datetime.now(timezone.utc).date()
+    users = User.query.order_by(User.id.desc()).all()
+    domains = Domain.query.order_by(Domain.fetch_date.desc(), Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc()).limit(100).all()
+    total_users = User.query.count()
+    premium_users = User.query.filter_by(is_premium=True).count()
+    today_domains = Domain.query.filter_by(fetch_date=today).count()
+    return render_template_string(
+        ADMIN_TEMPLATE,
+        users=users,
+        domains=domains,
+        total_users=total_users,
+        premium_users=premium_users,
+        today_domains=today_domains,
+    )
+
+
 
 
 @app.route("/checkout")

@@ -131,11 +131,13 @@
         <div class="actions">
           {% if current_user.is_authenticated %}
             <span>{{ current_user.email }}{% if current_user.is_premium %} · Premium{% endif %}</span>
+            <a class="btn btn-outline" href="{{ url_for('user_page') }}">User Page</a>
             <a class="btn btn-outline" href="{{ url_for('logout') }}">Logout</a>
           {% else %}
             <a class="btn btn-outline" href="{{ url_for('login') }}">Login</a>
             <a class="btn btn-dark" href="{{ url_for('register') }}">Register</a>
           {% endif %}
+          <a class="btn btn-outline" href="{{ url_for('admin') }}">Admin</a>
         </div>
       </div>
 
