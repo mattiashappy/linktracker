@@ -53,6 +53,19 @@
         background: #059669;
         color: #ffffff;
       }
+      .stats {
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-top: 18px;
+      }
+      .stat {
+        background: #f9fafb;
+        padding: 16px;
+        border-radius: 10px;
+        min-width: 180px;
+        border: 1px solid #e5e7eb;
+      }
       .premium-box {
         margin-top: 18px;
         padding: 16px;
@@ -137,6 +150,12 @@
             <a class="btn btn-outline" href="{{ url_for('login') }}">Login</a>
             <a class="btn btn-dark" href="{{ url_for('register') }}">Register</a>
           {% endif %}
+        </div>
+      </div>
+
+      <div class="stats">
+        <div class="stat">
+          <strong>Today's domains</strong><br>{{ total_domains }}
         </div>
       </div>
 
