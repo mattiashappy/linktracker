@@ -13,11 +13,15 @@ from models import Domain, db
 
 SOURCE_URL = "https://www.rymdweb.com/domain/snapback/?action=date"
 MOZ_API_URL = "https://lsapi.seomoz.com/v2/url_metrics"
+REQUEST_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+    "Accept-Language": "en-US,en;q=0.9,sv;q=0.8",
+}
 DOMAIN_PATTERN = re.compile(r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:se|nu)\b", re.IGNORECASE)
 
 
 def scrape_domains(limit: Optional[int] = None) -> List[str]:
-    response = requests.get(SOURCE_URL, timeout=20)
+    response = requests.get(SOURCE_URL, headers=REQUEST_HEADERS, timeout=20)
     response.raise_for_status()
 
     soup = BeautifulSoup(response.text, "html.parser")

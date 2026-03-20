@@ -1,11 +1,22 @@
 import os
+import re
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
+import requests
 import stripe
+from bs4 import BeautifulSoup
 from flask import Flask, abort, redirect, render_template, render_template_string, request, url_for
 from flask_login import LoginManager, current_user, login_required, login_user, logout_user
 
 from models import Domain, User, db
+
+SOURCE_URL = "https://www.rymdweb.com/domain/snapback/?action=date"
+REQUEST_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+    "Accept-Language": "en-US,en;q=0.9,sv;q=0.8",
+}
+DOMAIN_PATTERN = re.compile(r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:se|nu)\b", re.IGNORECASE)
 
 
 def normalize_database_url(database_url: str) -> str:
@@ -28,6 +39,37 @@ login_manager.login_view = "login"
 login_manager.init_app(app)
 
 stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
+
+
+def scrape_domains(limit: int | None = None):
+    response = requests.get(SOURCE_URL, headers=REQUEST_HEADERS, timeout=20)
+    response.raise_for_status()
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    extracted = []
+    seen = set()
+
+    for selector in ("table td", "table th", "tbody td", "a", "tr"):
+        for element in soup.select(selector):
+            text = " ".join(element.stripped_strings)
+            for match in DOMAIN_PATTERN.findall(text):
+                domain = match.lower().strip()
+                if domain not in seen:
+                    seen.add(domain)
+                    extracted.append(domain)
+                    if limit and len(extracted) >= limit:
+                        return extracted
+
+    page_text = soup.get_text(" ", strip=True)
+    for match in DOMAIN_PATTERN.findall(page_text):
+        domain = match.lower().strip()
+        if domain not in seen:
+            seen.add(domain)
+            extracted.append(domain)
+            if limit and len(extracted) >= limit:
+                break
+
+    return extracted
 
 AUTH_TEMPLATE = """
 <!doctype html>
@@ -79,12 +121,28 @@ def index():
     today = datetime.now(timezone.utc).date()
     latest_fetch_date = db.session.query(db.func.max(Domain.fetch_date)).scalar()
     active_date = today if Domain.query.filter_by(fetch_date=today).first() else latest_fetch_date
+    using_live_fallback = False
 
     if active_date is None:
-        domains = []
-        total_domains = 0
-        is_limited = False
-        hidden_count = 0
+        try:
+            scraped_domains = scrape_domains()
+        except Exception:
+            scraped_domains = []
+
+        total_domains = len(scraped_domains)
+        if not current_user.is_authenticated or not current_user.is_premium:
+            visible_domains = scraped_domains[:25]
+            is_limited = total_domains > 25
+        else:
+            visible_domains = scraped_domains
+            is_limited = False
+
+        domains = [
+            SimpleNamespace(domain_name=domain, da=None, linking_root_domains=None)
+            for domain in visible_domains
+        ]
+        hidden_count = max(total_domains - len(domains), 0)
+        using_live_fallback = bool(scraped_domains)
     else:
         query = Domain.query.filter_by(fetch_date=active_date).order_by(
             Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc()
@@ -108,6 +166,7 @@ def index():
         hidden_count=hidden_count,
         active_date=active_date,
         using_latest_available=active_date is not None and active_date != today,
+        using_live_fallback=using_live_fallback,
     )
 
 

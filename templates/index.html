@@ -121,6 +121,9 @@
           {% if using_latest_available %}
             <p><strong>Showing the latest available list from {{ active_date }}.</strong></p>
           {% endif %}
+          {% if using_live_fallback %}
+            <p><strong>Showing a live fallback list because the database is currently empty.</strong></p>
+          {% endif %}
         </div>
         <div class="actions">
           {% if current_user.is_authenticated %}
@@ -165,7 +168,7 @@
           </tbody>
         </table>
       {% else %}
-        <p class="empty">No domains have been fetched for today yet.</p>
+        <p class="empty">No domains are available right now.</p>
       {% endif %}
 
       {% if is_limited %}
