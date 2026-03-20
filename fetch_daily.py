@@ -119,12 +119,14 @@ def fetch_moz_metrics(domains: List[str]) -> List[Dict[str, Any]]:
     if not domains:
         return []
 
+    moz_targets = [domain if domain.startswith(("http://", "https://")) else f"https://{domain}" for domain in domains]
+
     response = None
     auth_errors = []
     for index, auth_kwargs in enumerate(get_moz_auth_options(), start=1):
         candidate = requests.post(
             MOZ_API_URL,
-            json={"targets": domains},
+            json={"targets": moz_targets},
             timeout=30,
             **auth_kwargs,
         )
