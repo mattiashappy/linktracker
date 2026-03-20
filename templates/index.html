@@ -171,10 +171,14 @@
         <p class="empty">No domains are available right now.</p>
       {% endif %}
 
-      {% if is_limited %}
+      {% if not current_user.is_authenticated or not current_user.is_premium %}
         <div class="premium-box">
           <strong>You are seeing 25 free domains today.</strong>
-          <div style="margin-top: 8px;">There are {{ hidden_count }} more domains available. Upgrade to Premium to unlock the full daily list.</div>
+          {% if hidden_count > 0 %}
+            <div style="margin-top: 8px;">There are {{ hidden_count }} more domains available. Upgrade to Premium to unlock the full daily list.</div>
+          {% else %}
+            <div style="margin-top: 8px;">Upgrade to Premium to see more domains at the bottom of the daily list as new rows are unlocked.</div>
+          {% endif %}
           {% if current_user.is_authenticated %}
             <div style="margin-top: 12px;">
               <a class="btn btn-dark" href="{{ url_for('checkout') }}">Upgrade Now</a>
