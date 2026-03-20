@@ -118,6 +118,9 @@
         <div>
           <h1>Expired Domains with Moz Metrics</h1>
           <p>Daily domains are fetched from the database and sorted by highest Domain Authority first.</p>
+          {% if release_date %}
+            <p><strong>Release date:</strong> {{ release_date }}</p>
+          {% endif %}
           {% if using_latest_available %}
             <p><strong>Showing the latest available list from {{ active_date }}.</strong></p>
           {% endif %}

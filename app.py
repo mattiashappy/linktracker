@@ -19,6 +19,7 @@ REQUEST_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9,sv;q=0.8",
 }
 DOMAIN_PATTERN = re.compile(r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:se|nu)\b", re.IGNORECASE)
+RELEASE_DATE_PATTERN = re.compile(r"Domäner som släpps\s+(\d{4}-\d{2}-\d{2})", re.IGNORECASE)
 
 
 def normalize_database_url(database_url: str) -> str:
@@ -41,6 +42,23 @@ login_manager.login_view = "login"
 login_manager.init_app(app)
 
 stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
+
+
+
+
+def fetch_release_date():
+    response = requests.get(SOURCE_URL, headers=REQUEST_HEADERS, timeout=20)
+    response.raise_for_status()
+
+    text = response.text
+    match = RELEASE_DATE_PATTERN.search(text)
+    if match:
+        return match.group(1)
+
+    soup = BeautifulSoup(text, "html.parser")
+    page_text = soup.get_text(" ", strip=True)
+    match = RELEASE_DATE_PATTERN.search(page_text)
+    return match.group(1) if match else None
 
 
 def scrape_domains(limit: int | None = None):
@@ -254,6 +272,10 @@ def index():
     latest_fetch_date = db.session.query(db.func.max(Domain.fetch_date)).scalar()
     active_date = today if Domain.query.filter_by(fetch_date=today).first() else latest_fetch_date
     using_live_fallback = False
+    try:
+        release_date = fetch_release_date()
+    except Exception:
+        release_date = None
 
     if active_date is None:
         try:
@@ -305,6 +327,7 @@ def index():
         active_date=active_date,
         using_latest_available=active_date is not None and active_date != today,
         using_live_fallback=using_live_fallback,
+        release_date=release_date,
     )
 
 
