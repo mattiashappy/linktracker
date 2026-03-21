@@ -41,7 +41,16 @@ login_manager = LoginManager()
 login_manager.login_view = "login"
 login_manager.init_app(app)
 
-stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
+def get_stripe_publishable_key() -> str:
+    return (os.environ.get("STRIPE_PUBLISHABLE_KEY") or os.environ.get("Publishable_key_test") or "").strip()
+
+
+
+def get_stripe_secret_key() -> str:
+    return (os.environ.get("STRIPE_SECRET_KEY") or os.environ.get("Secret_key_test") or "").strip()
+
+
+stripe.api_key = get_stripe_secret_key()
 
 
 
@@ -632,7 +641,7 @@ def checkout():
         return redirect(url_for("index"))
 
     price_id = os.environ.get("STRIPE_PRICE_ID", "")
-    if not stripe.api_key or not price_id:
+    if not get_stripe_secret_key() or not price_id:
         abort(500, "Stripe is not configured. Set STRIPE_SECRET_KEY and STRIPE_PRICE_ID.")
 
     checkout_session = stripe.checkout.Session.create(
