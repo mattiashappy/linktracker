@@ -284,22 +284,145 @@ USER_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>User Page</title>
     <style>
-      body { font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%); padding: 32px; color: #0f172a; }
-      .card { max-width: 720px; margin: 0 auto; background: rgba(255,255,255,0.92); border: 1px solid #e2e8f0; padding: 28px; border-radius: 24px; box-shadow: 0 24px 80px rgba(15, 23, 42, 0.08); }
-      .row { margin-bottom: 14px; color: #475569; }
-      .label { font-weight: 700; color: #0f172a; }
-      a.button { display: inline-block; background: #0f172a; color: #fff; padding: 12px 16px; border-radius: 999px; text-decoration: none; margin-right: 12px; }
+      :root {
+        --bg: #09090b;
+        --card: rgba(2, 6, 23, 0.78);
+        --border: rgba(148, 163, 184, 0.16);
+        --foreground: #f8fafc;
+        --muted: #94a3b8;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(99, 102, 241, 0.25), transparent 26%),
+          linear-gradient(180deg, #020617 0%, #09090b 100%);
+        padding: 24px 16px 48px;
+        color: var(--foreground);
+      }
+      .card {
+        max-width: 880px;
+        margin: 0 auto;
+        background: var(--card);
+        border: 1px solid var(--border);
+        padding: 28px;
+        border-radius: 28px;
+        box-shadow: 0 24px 80px rgba(2, 6, 23, 0.4);
+        backdrop-filter: blur(18px);
+      }
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        padding: 7px 11px;
+        color: var(--muted);
+        background: rgba(255,255,255,0.04);
+        font-size: 0.82rem;
+      }
+      h1 {
+        margin: 14px 0 8px;
+        font-size: clamp(2rem, 4vw, 3rem);
+        letter-spacing: -0.05em;
+      }
+      .subtext {
+        margin: 0 0 22px;
+        color: var(--muted);
+        line-height: 1.7;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 16px;
+        margin-top: 18px;
+      }
+      .info-card {
+        border-radius: 22px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.04);
+        padding: 18px;
+      }
+      .label {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--muted);
+        font-size: 0.82rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .value {
+        font-size: 1.02rem;
+        font-weight: 600;
+        word-break: break-word;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 7px 12px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.06);
+      }
+      .badge.premium {
+        background: rgba(34, 197, 94, 0.12);
+        border-color: rgba(34, 197, 94, 0.24);
+        color: #bbf7d0;
+      }
+      .actions {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-top: 22px;
+      }
+      a.button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 42px;
+        padding: 0 16px;
+        border-radius: 12px;
+        text-decoration: none;
+        font-weight: 600;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.05);
+        color: var(--foreground);
+      }
+      a.button.primary {
+        background: #f8fafc;
+        color: #020617;
+        border-color: transparent;
+      }
     </style>
   </head>
   <body>
     <div class="card">
-      <h1>User Page</h1>
-      <div class="row"><span class="label">Email:</span> {{ user.email }}</div>
-      <div class="row"><span class="label">Premium:</span> {{ 'Yes' if user.is_premium else 'No' }}</div>
-      <div class="row"><span class="label">Stripe customer:</span> {{ user.stripe_customer_id or 'Not connected yet' }}</div>
-      <div class="row">
+      <span class="eyebrow">Account overview</span>
+      <h1>Your dashboard account</h1>
+      <p class="subtext">This page now matches the darker dashboard treatment from the refreshed home view so the signed-in experience feels more cohesive.</p>
+      <div class="grid">
+        <div class="info-card">
+          <span class="label">Email</span>
+          <div class="value">{{ user.email }}</div>
+        </div>
+        <div class="info-card">
+          <span class="label">Membership</span>
+          <div class="value">
+            <span class="badge{% if user.is_premium %} premium{% endif %}">{{ 'Premium' if user.is_premium else 'Free' }}</span>
+          </div>
+        </div>
+        <div class="info-card">
+          <span class="label">Stripe customer</span>
+          <div class="value">{{ user.stripe_customer_id or 'Not connected yet' }}</div>
+        </div>
+      </div>
+      <div class="actions">
         {% if not user.is_premium %}
-          <a class="button" href="{{ url_for('checkout') }}">Upgrade to Premium</a>
+          <a class="button primary" href="{{ url_for('checkout') }}">Upgrade to Premium</a>
         {% endif %}
         <a class="button" href="{{ url_for('index') }}">Back to domains</a>
       </div>
