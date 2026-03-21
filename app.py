@@ -50,6 +50,16 @@ def get_stripe_secret_key() -> str:
     return (os.environ.get("STRIPE_SECRET_KEY") or os.environ.get("Secret_key_test") or "").strip()
 
 
+
+def get_stripe_price_id() -> str:
+    return (
+        os.environ.get("STRIPE_PRICE_ID")
+        or os.environ.get("STRIPE_PRICE_ID_TEST")
+        or os.environ.get("Price_id_test")
+        or ""
+    ).strip()
+
+
 stripe.api_key = get_stripe_secret_key()
 
 
@@ -640,16 +650,20 @@ def checkout():
     if current_user.is_authenticated and current_user.is_premium:
         return redirect(url_for("index"))
 
-    price_id = os.environ.get("STRIPE_PRICE_ID", "")
+    price_id = get_stripe_price_id()
     if not get_stripe_secret_key() or not price_id:
-        abort(500, "Stripe is not configured. Set STRIPE_SECRET_KEY and STRIPE_PRICE_ID.")
+        abort(500, "Stripe is not configured. Set STRIPE_SECRET_KEY/Secret_key_test and STRIPE_PRICE_ID/STRIPE_PRICE_ID_TEST.")
 
-    checkout_session = stripe.checkout.Session.create(
-        mode="subscription",
-        line_items=[{"price": price_id, "quantity": 1}],
-        success_url=url_for("complete_setup", _external=True) + "?session_id={CHECKOUT_SESSION_ID}",
-        cancel_url=url_for("index", _external=True),
-    )
+    try:
+        checkout_session = stripe.checkout.Session.create(
+            mode="subscription",
+            line_items=[{"price": price_id, "quantity": 1}],
+            success_url=url_for("complete_setup", _external=True) + "?session_id={CHECKOUT_SESSION_ID}",
+            cancel_url=url_for("index", _external=True),
+        )
+    except stripe.error.StripeError as exc:
+        return abort(500, f"Stripe checkout error: {str(exc)}. Make sure the price ID matches the configured Stripe key and test/live mode.")
+
     return redirect(checkout_session.url, code=303)
 
 
