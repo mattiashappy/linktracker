@@ -171,17 +171,22 @@ def fetch_moz_metrics(domains):
     moz_targets = [domain if domain.startswith(("http://", "https://")) else f"https://{domain}" for domain in domains]
     response = None
     for auth_kwargs in auth_options:
-        candidate = requests.post(
-            MOZ_API_URL,
-            json={"targets": moz_targets},
-            timeout=30,
-            **auth_kwargs,
-        )
+        try:
+            candidate = requests.post(
+                MOZ_API_URL,
+                json={"targets": moz_targets},
+                timeout=30,
+                **auth_kwargs,
+            )
+        except requests.RequestException:
+            continue
+
         if candidate.ok:
             response = candidate
             break
-        if candidate.status_code not in (401, 403):
-            candidate.raise_for_status()
+        if candidate.status_code in (401, 403):
+            continue
+        return []
 
     if response is None:
         return []
