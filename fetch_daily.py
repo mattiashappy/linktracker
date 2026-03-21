@@ -165,29 +165,42 @@ def fetch_moz_metrics(domains: List[str]) -> List[Dict[str, Any]]:
 
 def refresh_daily_domains() -> None:
     today = datetime.now(timezone.utc).date()
-    release_date_text = fetch_release_date()
-    release_date_value = date.fromisoformat(release_date_text) if release_date_text else today
-    domains = scrape_domains()
-    if not domains:
-        raise RuntimeError("No domains were scraped. Existing database rows were preserved.")
 
-    metrics = fetch_moz_metrics(domains)
-    if not metrics:
-        metrics = [
-            {
-                "domain_name": normalize_domain(domain),
-                "da": None,
-                "linking_root_domains": None,
-            }
-            for domain in domains
+    # 1. Fetch release date from site
+    try:
+        release_date_text = fetch_release_date()
+        release_date_value = date.fromisoformat(release_date_text) if release_date_text else today
+    except Exception as e:
+        print(f"Date parse failed: {e}. Using today's date.")
+        release_date_value = today
+
+    # 2. Scrape EXACTLY 25 domains
+    print("Scraping top 25 domains...")
+    domains = scrape_domains(limit=25)
+
+    if not domains:
+        print("No domains found. Aborting.")
+        return
+
+    # 3. Fetch metrics for those 25 (Safe from 400 error now)
+    try:
+        print(f"Fetching Moz metrics for {len(domains)} domains...")
+        all_metrics = fetch_moz_metrics(domains)
+    except Exception as e:
+        print(f"Moz API Error: {e}. Saving domains without metrics.")
+        all_metrics = [
+            {"domain_name": d, "da": None, "linking_root_domains": None}
+            for d in domains
         ]
 
+    # 4. Save to Database
     with app.app_context():
         ensure_database_schema()
-        Domain.query.filter_by(fetch_date=today).delete()
-        Domain.query.filter(Domain.fetch_date < today).delete()
 
-        for item in metrics:
+        # Only clear today's specific run to prevent duplicates
+        Domain.query.filter_by(fetch_date=today).delete()
+
+        for item in all_metrics:
             db.session.add(
                 Domain(
                     domain_name=item["domain_name"],
@@ -199,7 +212,7 @@ def refresh_daily_domains() -> None:
             )
 
         db.session.commit()
-        print(f"Saved {len(metrics)} domains for {today}.")
+        print(f"✅ Success! Saved {len(all_metrics)} domains for {today}.")
 
 
 if __name__ == "__main__":
