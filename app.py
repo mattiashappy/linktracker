@@ -402,6 +402,7 @@ AUTH_TEMPLATE = """
   <body>
     <div class="card">
       <h1>{{ title }}</h1>
+      {% if description %}<p class="meta">{{ description }}</p>{% endif %}
       {% if error %}<div class="error">{{ error }}</div>{% endif %}
       <form method="post">
         <label for="email">{{ identifier_label or 'Email' }}</label>
@@ -543,13 +544,17 @@ def register():
             db.session.add(user)
             db.session.commit()
             login_user(user)
+
+            if stripe.api_key and os.environ.get("STRIPE_PRICE_ID"):
+                return redirect(url_for("checkout"))
             return redirect(url_for("index"))
 
     return render_template_string(
         AUTH_TEMPLATE,
-        title="Register",
-        submit_label="Create account",
+        title="Register & Subscribe",
+        submit_label="Continue to Stripe",
         error=error,
+        description="Create your account first and then continue to Stripe to activate your subscription.",
         identifier_label="Email",
         identifier_type="email",
     )
@@ -579,6 +584,7 @@ def login():
         title="Login",
         submit_label="Sign in",
         error=error,
+        description=None,
         identifier_label="Email or username",
         identifier_type="text",
     )
