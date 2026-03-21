@@ -1,0 +1,660 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LinkTracker Dashboard</title>
+    <style>
+      :root {
+        --bg: #09090b;
+        --sidebar: #0c0c0f;
+        --surface: #111114;
+        --surface-2: #18181b;
+        --surface-3: #1f1f23;
+        --border: rgba(255, 255, 255, 0.08);
+        --border-strong: rgba(255, 255, 255, 0.12);
+        --text: #fafafa;
+        --muted: #a1a1aa;
+        --muted-2: #71717a;
+        --primary: #fafafa;
+        --primary-text: #09090b;
+        --accent: #2563eb;
+        --accent-soft: rgba(37, 99, 235, 0.14);
+        --success: #22c55e;
+        --warning: #f59e0b;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      a { color: inherit; text-decoration: none; }
+      button, input, select { font: inherit; }
+
+      .app-shell {
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: 272px minmax(0, 1fr);
+      }
+
+      .sidebar {
+        background: var(--sidebar);
+        border-right: 1px solid var(--border);
+        padding: 16px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        transition: width 0.2s ease, padding 0.2s ease;
+      }
+
+      body.sidebar-collapsed .app-shell {
+        grid-template-columns: 88px minmax(0, 1fr);
+      }
+
+      body.sidebar-collapsed .sidebar { padding-inline: 10px; }
+      body.sidebar-collapsed .sidebar-text,
+      body.sidebar-collapsed .sidebar-label,
+      body.sidebar-collapsed .nav-badge,
+      body.sidebar-collapsed .sidebar-card,
+      body.sidebar-collapsed .user-copy,
+      body.sidebar-collapsed .menu-items {
+        display: none;
+      }
+      body.sidebar-collapsed .brand {
+        justify-content: center;
+      }
+      body.sidebar-collapsed .nav-link {
+        justify-content: center;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 10px;
+      }
+      .brand-mark {
+        width: 38px;
+        height: 38px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #2563eb, #7c3aed);
+        display: grid;
+        place-items: center;
+        font-weight: 800;
+        color: white;
+        flex: 0 0 auto;
+      }
+      .brand strong { display: block; font-size: 0.95rem; }
+      .brand span { color: var(--muted); font-size: 0.8rem; }
+
+      .sidebar-label {
+        padding: 0 10px;
+        color: var(--muted-2);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 0.72rem;
+      }
+      .nav {
+        display: grid;
+        gap: 4px;
+      }
+      .nav-link {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        min-height: 40px;
+        padding: 0 12px;
+        border-radius: 12px;
+        color: var(--muted);
+      }
+      .nav-link.active,
+      .nav-link:hover {
+        background: var(--surface);
+        color: var(--text);
+      }
+      .nav-badge {
+        min-width: 24px;
+        padding: 3px 7px;
+        border-radius: 999px;
+        background: var(--surface-3);
+        border: 1px solid var(--border);
+        text-align: center;
+        font-size: 0.72rem;
+      }
+
+      .sidebar-card {
+        border: 1px solid var(--border);
+        background: var(--surface);
+        border-radius: 18px;
+        padding: 14px;
+      }
+      .sidebar-card h3 {
+        margin: 0 0 6px;
+        font-size: 0.92rem;
+      }
+      .sidebar-card p,
+      .sidebar-card span,
+      .header-subtitle,
+      .card-caption,
+      .toolbar-note,
+      .table-footer {
+        color: var(--muted);
+      }
+
+      .sidebar-spacer { flex: 1; }
+
+      details.user-menu {
+        border: 1px solid var(--border);
+        background: var(--surface);
+        border-radius: 18px;
+        overflow: hidden;
+      }
+      .user-summary {
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px;
+        cursor: pointer;
+      }
+      .user-summary::-webkit-details-marker { display: none; }
+      .avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #2563eb, #9333ea);
+        display: grid;
+        place-items: center;
+        font-weight: 700;
+        flex: 0 0 auto;
+      }
+      .user-copy {
+        min-width: 0;
+        display: grid;
+        gap: 2px;
+      }
+      .user-copy strong,
+      .user-copy span {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .user-copy span { color: var(--muted); font-size: 0.8rem; }
+      .menu-items {
+        border-top: 1px solid var(--border);
+        padding: 8px;
+        display: grid;
+        gap: 4px;
+      }
+      .menu-item {
+        display: block;
+        padding: 10px 12px;
+        border-radius: 10px;
+        color: var(--muted);
+      }
+      .menu-item:hover { background: var(--surface-2); color: var(--text); }
+
+      .content {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .header {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        height: 64px;
+        border-bottom: 1px solid var(--border);
+        background: rgba(9, 9, 11, 0.94);
+        backdrop-filter: blur(12px);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 0 18px;
+      }
+      .header-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+      }
+      .icon-button,
+      .secondary-button,
+      .primary-button,
+      .page-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        min-height: 36px;
+        padding: 0 12px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--text);
+        cursor: pointer;
+      }
+      .icon-button {
+        width: 36px;
+        padding: 0;
+      }
+      .primary-button {
+        background: var(--primary);
+        border-color: transparent;
+        color: var(--primary-text);
+      }
+      .secondary-button { color: var(--muted); }
+      .page-link[aria-disabled="true"] {
+        opacity: 0.45;
+        pointer-events: none;
+      }
+      .header-title {
+        min-width: 0;
+      }
+      .header-title strong {
+        display: block;
+        font-size: 1rem;
+      }
+      .header-subtitle {
+        font-size: 0.82rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .header-right {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .main {
+        padding: 18px;
+        display: grid;
+        gap: 18px;
+      }
+
+      .metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+      }
+      .card,
+      .table-card {
+        border: 1px solid var(--border);
+        background: var(--surface);
+        border-radius: 18px;
+      }
+      .card {
+        padding: 16px;
+      }
+      .card-label {
+        color: var(--muted);
+        font-size: 0.8rem;
+        margin-bottom: 8px;
+      }
+      .card-value {
+        font-size: 1.7rem;
+        font-weight: 700;
+        letter-spacing: -0.04em;
+      }
+      .card-caption {
+        margin-top: 8px;
+        font-size: 0.8rem;
+        line-height: 1.45;
+      }
+
+      .table-card {
+        overflow: hidden;
+      }
+      .table-topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        flex-wrap: wrap;
+        padding: 16px;
+        border-bottom: 1px solid var(--border);
+      }
+      .table-title h2 {
+        margin: 0;
+        font-size: 1rem;
+      }
+      .table-title p {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 0.84rem;
+      }
+      .toolbar-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .search-form {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .search-input,
+      .page-size-select {
+        height: 36px;
+        border-radius: 10px;
+        border: 1px solid var(--border-strong);
+        background: var(--surface-2);
+        color: var(--text);
+      }
+      .search-input {
+        min-width: 260px;
+        padding: 0 12px;
+      }
+      .page-size-select {
+        padding: 0 10px;
+      }
+      .toolbar-note {
+        padding: 0 16px 12px;
+        font-size: 0.82rem;
+      }
+
+      .table-scroll {
+        max-height: calc(100vh - 280px);
+        overflow: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 860px;
+      }
+      thead th {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        background: #131316;
+        color: var(--muted);
+        text-align: left;
+        padding: 10px 14px;
+        font-size: 0.74rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        border-bottom: 1px solid var(--border-strong);
+      }
+      tbody td {
+        padding: 9px 14px;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+        font-size: 0.88rem;
+        vertical-align: middle;
+      }
+      tbody tr:hover { background: rgba(255,255,255,0.025); }
+      .domain-cell strong {
+        display: block;
+        font-size: 0.9rem;
+      }
+      .domain-meta {
+        color: var(--muted-2);
+        font-size: 0.75rem;
+        margin-top: 2px;
+      }
+      .numeric {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        padding: 0 8px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--surface-3);
+        color: var(--muted);
+        font-size: 0.75rem;
+      }
+      .badge.success { color: #bbf7d0; }
+      .badge.warning { color: #fde68a; }
+
+      .table-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+        padding: 14px 16px;
+        border-top: 1px solid var(--border);
+        font-size: 0.84rem;
+      }
+      .pagination {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .page-current {
+        padding: 0 4px;
+      }
+
+      @media (max-width: 1080px) {
+        .app-shell { grid-template-columns: 1fr; }
+        .sidebar { border-right: 0; border-bottom: 1px solid var(--border); }
+        body.sidebar-collapsed .app-shell { grid-template-columns: 1fr; }
+        body.sidebar-collapsed .sidebar {
+          padding: 16px 12px;
+        }
+        body.sidebar-collapsed .sidebar-text,
+        body.sidebar-collapsed .sidebar-label,
+        body.sidebar-collapsed .nav-badge,
+        body.sidebar-collapsed .sidebar-card,
+        body.sidebar-collapsed .user-copy,
+        body.sidebar-collapsed .menu-items {
+          display: initial;
+        }
+        .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      }
+      @media (max-width: 720px) {
+        .header,
+        .main { padding-left: 12px; padding-right: 12px; }
+        .metrics-grid { grid-template-columns: 1fr; }
+        .search-input { min-width: 100%; }
+        .table-scroll { max-height: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">LT</div>
+          <div class="sidebar-text">
+            <strong>LinkTracker</strong>
+            <span>Domain tracking SaaS</span>
+          </div>
+        </div>
+
+        <div>
+          <div class="sidebar-label">Navigation</div>
+          <nav class="nav">
+            <a class="nav-link active" href="{{ url_for('index', q=search_query, page=1, page_size=page_size) }}"><span class="sidebar-text">Dashboard</span><span class="nav-badge">{{ total_domains }}</span></a>
+            <a class="nav-link" href="#domain-table"><span class="sidebar-text">Domains</span><span class="nav-badge">{{ total_filtered }}</span></a>
+            {% if current_user.is_authenticated %}
+              <a class="nav-link" href="{{ url_for('user_page') }}"><span class="sidebar-text">Account</span><span class="nav-badge">•</span></a>
+            {% else %}
+              <a class="nav-link" href="{{ url_for('login') }}"><span class="sidebar-text">Login</span><span class="nav-badge">→</span></a>
+            {% endif %}
+          </nav>
+        </div>
+
+        <div class="sidebar-card">
+          <h3>Dataset</h3>
+          <p>{{ release_date if release_date else 'Awaiting release date' }}</p>
+          <span>{{ total_domains }} tracked domains{% if hidden_count > 0 %} · {{ hidden_count }} premium-only{% endif %}</span>
+        </div>
+
+        <div class="sidebar-spacer"></div>
+
+        {% if current_user.is_authenticated %}
+          <details class="user-menu">
+            <summary class="user-summary">
+              <div class="avatar">{{ current_user.email[0]|upper }}</div>
+              <div class="user-copy">
+                <strong>{{ current_user.email }}</strong>
+                <span>{{ 'Premium account' if current_user.is_premium else 'Free account' }}</span>
+              </div>
+            </summary>
+            <div class="menu-items">
+              <a class="menu-item" href="{{ url_for('user_page') }}">Account</a>
+              {% if not current_user.is_premium %}
+                <a class="menu-item" href="{{ url_for('checkout') }}">Billing</a>
+              {% endif %}
+              <a class="menu-item" href="{{ url_for('logout') }}">Log out</a>
+            </div>
+          </details>
+        {% else %}
+          <details class="user-menu" open>
+            <summary class="user-summary">
+              <div class="avatar">G</div>
+              <div class="user-copy">
+                <strong>Guest</strong>
+                <span>Preview access</span>
+              </div>
+            </summary>
+            <div class="menu-items">
+              <a class="menu-item" href="{{ url_for('login') }}">Login</a>
+              <a class="menu-item" href="{{ url_for('checkout') }}">Start Premium</a>
+            </div>
+          </details>
+        {% endif %}
+      </aside>
+
+      <main class="content">
+        <header class="header">
+          <div class="header-left">
+            <button class="icon-button" type="button" id="sidebar-toggle" aria-label="Toggle sidebar">☰</button>
+            <div class="header-title">
+              <strong>Domain Dashboard</strong>
+              <div class="header-subtitle">Minimal, compact, and optimized for scanning large domain lists.</div>
+            </div>
+          </div>
+          <div class="header-right">
+            {% if current_user.is_authenticated and not current_user.is_premium %}
+              <a class="primary-button" href="{{ url_for('checkout') }}">Upgrade</a>
+            {% endif %}
+            {% if not current_user.is_authenticated %}
+              <a class="secondary-button" href="{{ url_for('login') }}">Login</a>
+            {% endif %}
+          </div>
+        </header>
+
+        <div class="main">
+          <section class="metrics-grid">
+            {% for stat in dashboard_stats %}
+              <article class="card">
+                <div class="card-label">{{ stat.label }}</div>
+                <div class="card-value">{{ stat.value }}</div>
+                <div class="card-caption">{{ stat.detail }}</div>
+              </article>
+            {% endfor %}
+          </section>
+
+          <section class="table-card" id="domain-table">
+            <div class="table-topbar">
+              <div class="table-title">
+                <h2>Domains</h2>
+                <p>Compact data table with sticky headers, search, and pagination.</p>
+              </div>
+              <div class="toolbar-actions">
+                <form class="search-form" method="get" action="{{ url_for('index') }}">
+                  <input class="search-input" type="search" name="q" value="{{ search_query }}" placeholder="Search domain name...">
+                  <select class="page-size-select" name="page_size" aria-label="Rows per page">
+                    <option value="10" {% if page_size == 10 %}selected{% endif %}>10 rows</option>
+                    <option value="25" {% if page_size == 25 %}selected{% endif %}>25 rows</option>
+                    <option value="50" {% if page_size == 50 %}selected{% endif %}>50 rows</option>
+                  </select>
+                  <button class="primary-button" type="submit">Search</button>
+                </form>
+              </div>
+            </div>
+
+            <div class="toolbar-note">
+              Showing {{ start_index }}-{{ end_index }} of {{ total_filtered }} matching domains{% if search_query %} for “{{ search_query }}”{% endif %}.
+            </div>
+
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Domain</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th class="numeric">DA</th>
+                    <th class="numeric">Links</th>
+                    <th>Release Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% if domains %}
+                    {% for domain in domains %}
+                      {% set has_metrics = domain.da is not none or domain.linking_root_domains is not none %}
+                      {% set resolved_release = domain.release_date if domain.release_date is defined and domain.release_date is not none else release_date if release_date else 'N/A' %}
+                      <tr>
+                        <td>
+                          <div class="domain-cell">
+                            <strong>{{ domain.domain_name }}</strong>
+                            <div class="domain-meta">{{ 'Visible in premium dataset' if current_user.is_authenticated and current_user.is_premium else 'Preview dataset row' }}</div>
+                          </div>
+                        </td>
+                        <td><span class="badge">{{ '.se' if domain.domain_name.endswith('.se') else '.nu' }}</span></td>
+                        <td>
+                          <span class="badge {% if has_metrics %}success{% else %}warning{% endif %}">{{ 'Ready' if has_metrics else 'Pending Moz' }}</span>
+                        </td>
+                        <td class="numeric">{{ domain.da if domain.da is not none else '—' }}</td>
+                        <td class="numeric">{{ domain.linking_root_domains if domain.linking_root_domains is not none else '—' }}</td>
+                        <td>{{ resolved_release }}</td>
+                      </tr>
+                    {% endfor %}
+                  {% else %}
+                    <tr>
+                      <td colspan="6" style="padding: 18px 14px; text-align:center; color: var(--muted);">No domains matched your current filters.</td>
+                    </tr>
+                  {% endif %}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="table-footer">
+              <div>{{ domains|length }} row(s) on this page · default page size {{ page_size }}</div>
+              <div class="pagination">
+                <a class="page-link" href="{{ url_for('index', q=search_query, page=page-1, page_size=page_size) }}" aria-disabled="{{ 'true' if page <= 1 else 'false' }}">Previous</a>
+                <span class="page-current">Page {{ page }} of {{ total_pages }}</span>
+                <a class="page-link" href="{{ url_for('index', q=search_query, page=page+1, page_size=page_size) }}" aria-disabled="{{ 'true' if page >= total_pages else 'false' }}">Next</a>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <script>
+      (function () {
+        const storageKey = "linktracker-sidebar-collapsed";
+        const body = document.body;
+        const button = document.getElementById("sidebar-toggle");
+        const saved = window.localStorage.getItem(storageKey);
+        if (saved === "true" && window.innerWidth > 1080) {
+          body.classList.add("sidebar-collapsed");
+        }
+        if (button) {
+          button.addEventListener("click", function () {
+            if (window.innerWidth <= 1080) return;
+            body.classList.toggle("sidebar-collapsed");
+            window.localStorage.setItem(storageKey, body.classList.contains("sidebar-collapsed"));
+          });
+        }
+      })();
+    </script>
+  </body>
+</html>
