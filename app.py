@@ -615,37 +615,6 @@ def stripe_customer_has_active_subscription(customer_id: str) -> bool:
     return any(subscription.get("status") in active_statuses for subscription in subscriptions)
 
 
-def build_dashboard_chart_points(domains):
-    chart_domains = list(domains[:6])
-    if not chart_domains:
-        return []
-
-    max_da = max((domain.da or 0) for domain in chart_domains) or 1
-    max_links = max((domain.linking_root_domains or 0) for domain in chart_domains) or 1
-    count = len(chart_domains)
-    width = 360
-    start_x = 24
-    step = width / max(count - 1, 1)
-    base_y = 172
-    range_y = 112
-
-    points = []
-    for index, domain in enumerate(chart_domains):
-        x = start_x + (step * index if count > 1 else width / 2)
-        da_value = domain.da or 0
-        links_value = domain.linking_root_domains or 0
-        points.append(
-            {
-                "label": domain.domain_name[:12],
-                "x": round(x, 2),
-                "da_y": round(base_y - ((da_value / max_da) * range_y), 2),
-                "links_y": round(base_y - ((links_value / max_links) * range_y), 2),
-                "da": da_value,
-                "links": links_value,
-            }
-        )
-    return points
-
 @login_manager.user_loader
 def load_user(user_id: str):
     return db.session.get(User, int(user_id))
@@ -670,6 +639,16 @@ with app.app_context():
 @app.route("/")
 def index():
     today = datetime.now(timezone.utc).date()
+    search_query = request.args.get("q", "").strip().lower()
+    try:
+        page = max(int(request.args.get("page", "1")), 1)
+    except ValueError:
+        page = 1
+    try:
+        requested_page_size = int(request.args.get("page_size", "25"))
+    except ValueError:
+        requested_page_size = 25
+    page_size = requested_page_size if requested_page_size in {10, 25, 50} else 25
     latest_fetch_date = db.session.query(db.func.max(Domain.fetch_date)).scalar()
     latest_release_date = db.session.query(db.func.max(Domain.release_date)).scalar()
     using_live_fallback = False
@@ -694,13 +673,24 @@ def index():
         except Exception:
             scraped_domains = []
 
+        filtered_scraped_domains = [
+            domain for domain in scraped_domains if search_query in domain.lower()
+        ] if search_query else scraped_domains
         total_domains = len(scraped_domains)
+        total_filtered = len(filtered_scraped_domains)
+
         if not current_user.is_authenticated or not current_user.is_premium:
-            visible_domains = scraped_domains[:25]
-            is_limited = total_domains > 25
+            accessible_domains = filtered_scraped_domains[:25]
+            is_limited = total_filtered > 25
         else:
-            visible_domains = scraped_domains
+            accessible_domains = filtered_scraped_domains
             is_limited = False
+
+        total_pages = max(1, (len(accessible_domains) + page_size - 1) // page_size) if accessible_domains else 1
+        if page > total_pages:
+            page = total_pages
+        start_offset = (page - 1) * page_size
+        visible_domains = accessible_domains[start_offset:start_offset + page_size]
 
         domains = [
             SimpleNamespace(
@@ -713,70 +703,88 @@ def index():
         ]
         domains = hydrate_visible_domains(domains, today)
         ensure_today_domain_snapshot(scraped_domains, domains, today, current_release_date or today)
-        hidden_count = max(total_domains - len(domains), 0)
+        hidden_count = max(total_domains - len(accessible_domains), 0)
         using_live_fallback = bool(scraped_domains)
         if any(domain.da is not None or domain.linking_root_domains is not None for domain in domains):
             active_date = current_release_date or today
             using_live_fallback = False
     else:
-        query = Domain.query.filter(
+        base_query = Domain.query.filter(
             (Domain.release_date == active_date) | ((Domain.release_date.is_(None)) & (Domain.fetch_date == active_date))
         ).order_by(
             Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc()
         )
-        total_domains = query.count()
+        total_domains = base_query.count()
+        query = base_query
+        if search_query:
+            query = query.filter(Domain.domain_name.ilike(f"%{search_query}%"))
+        total_filtered = query.count()
 
         if not current_user.is_authenticated or not current_user.is_premium:
-            domains = query.limit(25).all()
-            is_limited = total_domains > 25
+            accessible_domains = query.limit(25).all()
+            is_limited = total_filtered > 25
+            total_pages = max(1, (len(accessible_domains) + page_size - 1) // page_size) if accessible_domains else 1
+            if page > total_pages:
+                page = total_pages
+            start_offset = (page - 1) * page_size
+            domains = accessible_domains[start_offset:start_offset + page_size]
         else:
-            domains = query.all()
+            total_pages = max(1, (total_filtered + page_size - 1) // page_size) if total_filtered else 1
+            if page > total_pages:
+                page = total_pages
+            domains = query.offset((page - 1) * page_size).limit(page_size).all()
             is_limited = False
 
-        hidden_count = max(total_domains - len(domains), 0)
+        hidden_count = max(total_domains - min(total_filtered, 25), 0) if not current_user.is_authenticated or not current_user.is_premium else 0
         if any(domain.da is None and domain.linking_root_domains is None for domain in domains):
             domains = hydrate_visible_domains(domains, active_date)
 
     domains_with_da = [domain.da for domain in domains if domain.da is not None]
     domains_with_links = [domain.linking_root_domains for domain in domains if domain.linking_root_domains is not None]
-    chart_points = build_dashboard_chart_points(domains)
-    top_domain = domains[0].domain_name if domains else "No domains yet"
+    premium_opportunities = sum(1 for domain in domains if (domain.da or 0) >= 20)
     dashboard_stats = [
         {
-            "label": "Visible domains",
+            "label": "Total Domains",
+            "value": total_domains,
+            "detail": "Domains available for the active release date.",
+        },
+        {
+            "label": "Premium Opportunities",
+            "value": premium_opportunities,
+            "detail": "Visible rows with DA 20 or higher.",
+        },
+        {
+            "label": "Rows This Page",
             "value": len(domains),
-            "detail": "Rows loaded in the dashboard table.",
+            "detail": "Rows loaded in the current page.",
         },
         {
-            "label": "Average DA",
-            "value": round(sum(domains_with_da) / len(domains_with_da), 1) if domains_with_da else "N/A",
-            "detail": "Average authority across rows with Moz data.",
-        },
-        {
-            "label": "Hidden by paywall",
-            "value": hidden_count,
-            "detail": "Additional domains available in Premium.",
-        },
-        {
-            "label": "Top domain",
-            "value": top_domain,
-            "detail": "Highest-ranked visible result for the active release.",
+            "label": "Moz Coverage",
+            "value": f"{len(domains_with_da)}/{len(domains)}" if domains else "0/0",
+            "detail": "Rows on this page with Moz metrics attached.",
         },
     ]
+    start_index = ((page - 1) * page_size) + 1 if total_filtered else 0
+    end_index = min((page - 1) * page_size + len(domains), total_filtered) if total_filtered else 0
 
     return render_template(
         "index.html",
         domains=domains,
         is_limited=is_limited,
         total_domains=total_domains,
+        total_filtered=total_filtered,
         hidden_count=hidden_count,
         active_date=active_date,
         using_latest_available=active_date is not None and active_date != today,
         using_live_fallback=using_live_fallback,
         release_date=release_date,
         dashboard_stats=dashboard_stats,
-        chart_points=chart_points,
-        chart_has_metrics=bool(domains_with_da or domains_with_links),
+        search_query=search_query,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+        start_index=start_index,
+        end_index=end_index,
     )
 
 

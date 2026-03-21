@@ -3,19 +3,21 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Expired Domains Dashboard</title>
+    <title>LinkTracker Dashboard</title>
     <style>
       :root {
-        --background: #09090b;
-        --panel: #111214;
-        --panel-soft: #18181b;
-        --panel-subtle: #1f2023;
+        --bg: #09090b;
+        --sidebar: #0c0c0f;
+        --surface: #111114;
+        --surface-2: #18181b;
+        --surface-3: #1f1f23;
         --border: rgba(255, 255, 255, 0.08);
-        --foreground: #fafafa;
+        --border-strong: rgba(255, 255, 255, 0.12);
+        --text: #fafafa;
         --muted: #a1a1aa;
-        --muted-soft: #71717a;
+        --muted-2: #71717a;
         --primary: #fafafa;
-        --primary-foreground: #09090b;
+        --primary-text: #09090b;
         --accent: #2563eb;
         --accent-soft: rgba(37, 99, 235, 0.14);
         --success: #22c55e;
@@ -23,155 +25,135 @@
       }
 
       * { box-sizing: border-box; }
-
       body {
         margin: 0;
         min-height: 100vh;
-        background: var(--background);
-        color: var(--foreground);
+        background: var(--bg);
+        color: var(--text);
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
-
       a { color: inherit; text-decoration: none; }
+      button, input, select { font: inherit; }
 
-      .dashboard-shell {
+      .app-shell {
         min-height: 100vh;
         display: grid;
-        grid-template-columns: 290px minmax(0, 1fr);
+        grid-template-columns: 272px minmax(0, 1fr);
       }
 
       .sidebar {
+        background: var(--sidebar);
         border-right: 1px solid var(--border);
-        background: #0a0a0b;
-        padding: 18px 14px;
+        padding: 16px 12px;
         display: flex;
         flex-direction: column;
         gap: 18px;
-        position: sticky;
-        top: 0;
-        height: 100vh;
+        transition: width 0.2s ease, padding 0.2s ease;
+      }
+
+      body.sidebar-collapsed .app-shell {
+        grid-template-columns: 88px minmax(0, 1fr);
+      }
+
+      body.sidebar-collapsed .sidebar { padding-inline: 10px; }
+      body.sidebar-collapsed .sidebar-text,
+      body.sidebar-collapsed .sidebar-label,
+      body.sidebar-collapsed .nav-badge,
+      body.sidebar-collapsed .sidebar-card,
+      body.sidebar-collapsed .user-copy,
+      body.sidebar-collapsed .menu-items {
+        display: none;
+      }
+      body.sidebar-collapsed .brand {
+        justify-content: center;
+      }
+      body.sidebar-collapsed .nav-link {
+        justify-content: center;
       }
 
       .brand {
         display: flex;
         align-items: center;
         gap: 12px;
-        padding: 10px 12px;
+        padding: 8px 10px;
       }
-
       .brand-mark {
-        width: 36px;
-        height: 36px;
-        border-radius: 10px;
+        width: 38px;
+        height: 38px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #2563eb, #7c3aed);
         display: grid;
         place-items: center;
-        background: linear-gradient(135deg, #2563eb, #7c3aed);
-        color: white;
         font-weight: 800;
+        color: white;
+        flex: 0 0 auto;
       }
+      .brand strong { display: block; font-size: 0.95rem; }
+      .brand span { color: var(--muted); font-size: 0.8rem; }
 
-      .brand-copy strong {
-        display: block;
-        font-size: 0.95rem;
-      }
-
-      .brand-copy span {
-        color: var(--muted);
-        font-size: 0.82rem;
-      }
-
-      .sidebar-section-label {
-        padding: 0 12px;
-        color: var(--muted-soft);
+      .sidebar-label {
+        padding: 0 10px;
+        color: var(--muted-2);
         text-transform: uppercase;
         letter-spacing: 0.08em;
         font-size: 0.72rem;
       }
-
-      .sidebar-nav {
+      .nav {
         display: grid;
         gap: 4px;
       }
-
       .nav-link {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 11px 12px;
+        gap: 8px;
+        min-height: 40px;
+        padding: 0 12px;
         border-radius: 12px;
         color: var(--muted);
       }
-
       .nav-link.active,
       .nav-link:hover {
-        background: var(--panel);
-        color: var(--foreground);
+        background: var(--surface);
+        color: var(--text);
       }
-
       .nav-badge {
         min-width: 24px;
         padding: 3px 7px;
         border-radius: 999px;
-        background: var(--panel-subtle);
+        background: var(--surface-3);
         border: 1px solid var(--border);
-        color: var(--muted);
         text-align: center;
-        font-size: 0.75rem;
+        font-size: 0.72rem;
       }
 
       .sidebar-card {
         border: 1px solid var(--border);
-        background: var(--panel);
+        background: var(--surface);
         border-radius: 18px;
         padding: 14px;
       }
-
-      .sidebar-card h3,
-      .chart-card h3,
-      .table-card h3 {
-        margin: 0;
-        font-size: 0.95rem;
-        letter-spacing: -0.02em;
+      .sidebar-card h3 {
+        margin: 0 0 6px;
+        font-size: 0.92rem;
       }
-
       .sidebar-card p,
-      .chart-card p,
-      .table-card p,
+      .sidebar-card span,
       .header-subtitle,
-      .metric-caption,
-      .table-note,
-      .user-menu small,
-      .footer-note {
+      .card-caption,
+      .toolbar-note,
+      .table-footer {
         color: var(--muted);
-      }
-
-      .sidebar-stat-list {
-        display: grid;
-        gap: 10px;
-        margin-top: 14px;
-      }
-
-      .sidebar-stat {
-        border-radius: 14px;
-        border: 1px solid var(--border);
-        background: var(--panel-subtle);
-        padding: 10px 12px;
-      }
-
-      .sidebar-stat strong {
-        display: block;
-        margin-bottom: 4px;
       }
 
       .sidebar-spacer { flex: 1; }
 
       details.user-menu {
         border: 1px solid var(--border);
-        background: var(--panel);
+        background: var(--surface);
         border-radius: 18px;
         overflow: hidden;
       }
-
       .user-summary {
         list-style: none;
         display: flex;
@@ -180,444 +162,336 @@
         padding: 12px;
         cursor: pointer;
       }
-
       .user-summary::-webkit-details-marker { display: none; }
-
       .avatar {
-        width: 38px;
-        height: 38px;
+        width: 36px;
+        height: 36px;
         border-radius: 12px;
         background: linear-gradient(135deg, #2563eb, #9333ea);
         display: grid;
         place-items: center;
         font-weight: 700;
+        flex: 0 0 auto;
       }
-
       .user-copy {
         min-width: 0;
         display: grid;
-        gap: 3px;
+        gap: 2px;
       }
-
       .user-copy strong,
       .user-copy span {
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
       }
-
-      .user-copy span {
-        color: var(--muted);
-        font-size: 0.8rem;
-      }
-
+      .user-copy span { color: var(--muted); font-size: 0.8rem; }
       .menu-items {
         border-top: 1px solid var(--border);
         padding: 8px;
         display: grid;
         gap: 4px;
       }
-
       .menu-item {
         display: block;
         padding: 10px 12px;
         border-radius: 10px;
         color: var(--muted);
       }
-
-      .menu-item:hover { background: var(--panel-subtle); color: var(--foreground); }
+      .menu-item:hover { background: var(--surface-2); color: var(--text); }
 
       .content {
         min-width: 0;
         display: flex;
         flex-direction: column;
       }
-
-      .site-header {
+      .header {
         position: sticky;
         top: 0;
         z-index: 20;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 16px;
-        padding: 18px 24px;
+        height: 64px;
         border-bottom: 1px solid var(--border);
         background: rgba(9, 9, 11, 0.94);
-        backdrop-filter: blur(14px);
-      }
-
-      .header-overline {
-        color: var(--muted-soft);
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        font-size: 0.72rem;
-      }
-
-      .site-header h1 {
-        margin: 4px 0 0;
-        font-size: clamp(1.5rem, 3vw, 2.1rem);
-        letter-spacing: -0.04em;
-      }
-
-      .header-actions {
+        backdrop-filter: blur(12px);
         display: flex;
         align-items: center;
-        gap: 10px;
-        flex-wrap: wrap;
-      }
-
-      .pill,
-      .tab,
-      .status-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        border-radius: 999px;
-        border: 1px solid var(--border);
-        background: var(--panel);
-        color: var(--muted);
-        padding: 8px 12px;
-        font-size: 0.82rem;
-        white-space: nowrap;
-      }
-
-      .pill.primary {
-        background: var(--primary);
-        color: var(--primary-foreground);
-        border-color: transparent;
-      }
-
-      .main-scroll {
-        padding: 18px;
-      }
-
-      .main-stack {
-        display: grid;
-        gap: 18px;
-      }
-
-      .section-cards {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 16px;
-      }
-
-      .metric-card,
-      .chart-card,
-      .table-card {
-        border: 1px solid var(--border);
-        background: var(--panel);
-        border-radius: 22px;
-      }
-
-      .metric-card {
-        padding: 18px;
-      }
-
-      .metric-label {
-        color: var(--muted);
-        font-size: 0.82rem;
-        margin-bottom: 10px;
-      }
-
-      .metric-value {
-        font-size: 1.8rem;
-        font-weight: 700;
-        letter-spacing: -0.05em;
-        word-break: break-word;
-      }
-
-      .metric-caption {
-        margin-top: 10px;
-        font-size: 0.82rem;
-        line-height: 1.5;
-      }
-
-      .chart-card {
-        padding: 18px;
-      }
-
-      .chart-head {
-        display: flex;
-        align-items: flex-start;
         justify-content: space-between;
         gap: 16px;
-        flex-wrap: wrap;
+        padding: 0 18px;
       }
-
-      .chart-actions {
+      .header-left {
         display: flex;
         align-items: center;
+        gap: 12px;
+        min-width: 0;
+      }
+      .icon-button,
+      .secondary-button,
+      .primary-button,
+      .page-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
         gap: 8px;
-        flex-wrap: wrap;
-      }
-
-      .chart-canvas {
-        margin-top: 18px;
-        border-radius: 18px;
+        min-height: 36px;
+        padding: 0 12px;
+        border-radius: 10px;
         border: 1px solid var(--border);
-        background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
-        padding: 16px;
+        background: var(--surface);
+        color: var(--text);
+        cursor: pointer;
       }
-
-      .chart-grid {
-        stroke: rgba(255,255,255,0.08);
-        stroke-dasharray: 4 8;
+      .icon-button {
+        width: 36px;
+        padding: 0;
       }
-
-      .line-links {
-        fill: none;
-        stroke: #60a5fa;
-        stroke-width: 3;
+      .primary-button {
+        background: var(--primary);
+        border-color: transparent;
+        color: var(--primary-text);
       }
-
-      .line-da {
-        fill: none;
-        stroke: #f8fafc;
-        stroke-width: 3;
+      .secondary-button { color: var(--muted); }
+      .page-link[aria-disabled="true"] {
+        opacity: 0.45;
+        pointer-events: none;
       }
-
-      .chart-dot-da { fill: #f8fafc; }
-      .chart-dot-links { fill: #60a5fa; }
-
-      .chart-legend {
-        display: flex;
-        gap: 14px;
-        flex-wrap: wrap;
-        margin-top: 12px;
-        color: var(--muted);
+      .header-title {
+        min-width: 0;
+      }
+      .header-title strong {
+        display: block;
+        font-size: 1rem;
+      }
+      .header-subtitle {
         font-size: 0.82rem;
-      }
-
-      .legend-dot {
-        width: 10px;
-        height: 10px;
-        border-radius: 999px;
-        display: inline-block;
-      }
-
-      .chart-labels {
-        display: grid;
-        grid-template-columns: repeat(6, minmax(0, 1fr));
-        gap: 10px;
-        margin-top: 12px;
-      }
-
-      .chart-labels span {
-        color: var(--muted-soft);
-        font-size: 0.74rem;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
       }
+      .header-right {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .main {
+        padding: 18px;
+        display: grid;
+        gap: 18px;
+      }
+
+      .metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+      }
+      .card,
+      .table-card {
+        border: 1px solid var(--border);
+        background: var(--surface);
+        border-radius: 18px;
+      }
+      .card {
+        padding: 16px;
+      }
+      .card-label {
+        color: var(--muted);
+        font-size: 0.8rem;
+        margin-bottom: 8px;
+      }
+      .card-value {
+        font-size: 1.7rem;
+        font-weight: 700;
+        letter-spacing: -0.04em;
+      }
+      .card-caption {
+        margin-top: 8px;
+        font-size: 0.8rem;
+        line-height: 1.45;
+      }
 
       .table-card {
         overflow: hidden;
       }
-
-      .table-toolbar {
+      .table-topbar {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 16px;
+        gap: 14px;
         flex-wrap: wrap;
-        padding: 18px;
+        padding: 16px;
         border-bottom: 1px solid var(--border);
       }
-
-      .tabs {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
+      .table-title h2 {
+        margin: 0;
+        font-size: 1rem;
       }
-
-      .tab.active {
-        background: var(--foreground);
-        color: var(--background);
-        border-color: transparent;
+      .table-title p {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 0.84rem;
       }
-
       .toolbar-actions {
         display: flex;
+        align-items: center;
         gap: 10px;
         flex-wrap: wrap;
       }
-
-      .table-wrap {
-        overflow-x: auto;
+      .search-form {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .search-input,
+      .page-size-select {
+        height: 36px;
+        border-radius: 10px;
+        border: 1px solid var(--border-strong);
+        background: var(--surface-2);
+        color: var(--text);
+      }
+      .search-input {
+        min-width: 260px;
+        padding: 0 12px;
+      }
+      .page-size-select {
+        padding: 0 10px;
+      }
+      .toolbar-note {
+        padding: 0 16px 12px;
+        font-size: 0.82rem;
       }
 
+      .table-scroll {
+        max-height: calc(100vh - 280px);
+        overflow: auto;
+      }
       table {
         width: 100%;
         border-collapse: collapse;
-        min-width: 980px;
+        min-width: 860px;
       }
-
       thead th {
-        background: rgba(255,255,255,0.02);
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        background: #131316;
         color: var(--muted);
         text-align: left;
-        padding: 13px 16px;
-        font-size: 0.76rem;
+        padding: 10px 14px;
+        font-size: 0.74rem;
         text-transform: uppercase;
         letter-spacing: 0.08em;
-        border-bottom: 1px solid var(--border);
+        border-bottom: 1px solid var(--border-strong);
       }
-
       tbody td {
-        padding: 15px 16px;
-        border-bottom: 1px solid rgba(255,255,255,0.06);
+        padding: 9px 14px;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+        font-size: 0.88rem;
         vertical-align: middle;
       }
-
-      tbody tr:hover { background: rgba(255,255,255,0.02); }
-
-      .icon-cell,
-      .checkbox-cell,
-      .actions-cell { width: 42px; color: var(--muted-soft); }
-
-      .drag-handle {
-        font-size: 1rem;
-        line-height: 1;
-        color: var(--muted-soft);
+      tbody tr:hover { background: rgba(255,255,255,0.025); }
+      .domain-cell strong {
+        display: block;
+        font-size: 0.9rem;
       }
-
-      .checkbox {
-        width: 16px;
-        height: 16px;
-        border-radius: 5px;
-        border: 1px solid rgba(255,255,255,0.18);
-        display: inline-block;
-        background: transparent;
+      .domain-meta {
+        color: var(--muted-2);
+        font-size: 0.75rem;
+        margin-top: 2px;
       }
-
-      .domain-button {
-        display: inline-flex;
-        flex-direction: column;
-        gap: 5px;
-      }
-
-      .domain-button strong { font-size: 0.95rem; }
-
-      .subdomain-note {
-        color: var(--muted-soft);
-        font-size: 0.76rem;
-      }
-
-      .badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 7px 10px;
-        border-radius: 999px;
-        border: 1px solid var(--border);
-        background: var(--panel-subtle);
-        color: var(--muted);
-        font-size: 0.8rem;
-      }
-
-      .badge.done { color: #bbf7d0; }
-      .badge.waiting { color: #fde68a; }
-
       .numeric {
         text-align: right;
         font-variant-numeric: tabular-nums;
       }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        padding: 0 8px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--surface-3);
+        color: var(--muted);
+        font-size: 0.75rem;
+      }
+      .badge.success { color: #bbf7d0; }
+      .badge.warning { color: #fde68a; }
 
-      .footer-row {
+      .table-footer {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 16px;
+        gap: 12px;
         flex-wrap: wrap;
-        padding: 16px 18px;
-        color: var(--muted);
+        padding: 14px 16px;
+        border-top: 1px solid var(--border);
         font-size: 0.84rem;
       }
-
-      .pager {
+      .pagination {
         display: flex;
+        align-items: center;
         gap: 8px;
+        flex-wrap: wrap;
+      }
+      .page-current {
+        padding: 0 4px;
       }
 
-      .ghost-btn {
-        border: 1px solid var(--border);
-        background: var(--panel-subtle);
-        color: var(--foreground);
-        border-radius: 10px;
-        padding: 8px 10px;
-        font-size: 0.84rem;
-      }
-
-      @media (max-width: 1100px) {
-        .dashboard-shell { grid-template-columns: 1fr; }
-        .sidebar {
-          position: static;
-          height: auto;
-          border-right: 0;
-          border-bottom: 1px solid var(--border);
+      @media (max-width: 1080px) {
+        .app-shell { grid-template-columns: 1fr; }
+        .sidebar { border-right: 0; border-bottom: 1px solid var(--border); }
+        body.sidebar-collapsed .app-shell { grid-template-columns: 1fr; }
+        body.sidebar-collapsed .sidebar {
+          padding: 16px 12px;
         }
-        .section-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        body.sidebar-collapsed .sidebar-text,
+        body.sidebar-collapsed .sidebar-label,
+        body.sidebar-collapsed .nav-badge,
+        body.sidebar-collapsed .sidebar-card,
+        body.sidebar-collapsed .user-copy,
+        body.sidebar-collapsed .menu-items {
+          display: initial;
+        }
+        .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       }
-
       @media (max-width: 720px) {
-        .main-scroll,
-        .site-header { padding-left: 14px; padding-right: 14px; }
-        .section-cards { grid-template-columns: 1fr; }
-        .chart-labels { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .header,
+        .main { padding-left: 12px; padding-right: 12px; }
+        .metrics-grid { grid-template-columns: 1fr; }
+        .search-input { min-width: 100%; }
+        .table-scroll { max-height: none; }
       }
     </style>
   </head>
   <body>
-    <div class="dashboard-shell">
+    <div class="app-shell">
       <aside class="sidebar">
         <div class="brand">
           <div class="brand-mark">LT</div>
-          <div class="brand-copy">
+          <div class="sidebar-text">
             <strong>LinkTracker</strong>
-            <span>Dashboard 01 inspired</span>
+            <span>Domain tracking SaaS</span>
           </div>
         </div>
 
         <div>
-          <div class="sidebar-section-label">Platform</div>
-          <nav class="sidebar-nav">
-            <a class="nav-link active" href="{{ url_for('index') }}"><span>Overview</span><span class="nav-badge">1</span></a>
-            <a class="nav-link" href="#domains-table"><span>Domains table</span><span class="nav-badge">{{ domains|length }}</span></a>
-            <a class="nav-link" href="#chart-area"><span>Chart area</span><span class="nav-badge">6</span></a>
+          <div class="sidebar-label">Navigation</div>
+          <nav class="nav">
+            <a class="nav-link active" href="{{ url_for('index', q=search_query, page=1, page_size=page_size) }}"><span class="sidebar-text">Dashboard</span><span class="nav-badge">{{ total_domains }}</span></a>
+            <a class="nav-link" href="#domain-table"><span class="sidebar-text">Domains</span><span class="nav-badge">{{ total_filtered }}</span></a>
             {% if current_user.is_authenticated %}
-              <a class="nav-link" href="{{ url_for('user_page') }}"><span>Account</span><span class="nav-badge">•</span></a>
+              <a class="nav-link" href="{{ url_for('user_page') }}"><span class="sidebar-text">Account</span><span class="nav-badge">•</span></a>
             {% else %}
-              <a class="nav-link" href="{{ url_for('login') }}"><span>Login</span><span class="nav-badge">→</span></a>
+              <a class="nav-link" href="{{ url_for('login') }}"><span class="sidebar-text">Login</span><span class="nav-badge">→</span></a>
             {% endif %}
           </nav>
         </div>
 
         <div class="sidebar-card">
-          <h3>Release summary</h3>
+          <h3>Dataset</h3>
           <p>{{ release_date if release_date else 'Awaiting release date' }}</p>
-          <div class="sidebar-stat-list">
-            <div class="sidebar-stat">
-              <strong>{{ total_domains }}</strong>
-              <span class="footer-note">total domains tracked for the active list</span>
-            </div>
-            <div class="sidebar-stat">
-              <strong>{{ hidden_count }}</strong>
-              <span class="footer-note">rows hidden behind Premium right now</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="sidebar-card">
-          <h3>Access state</h3>
-          {% if current_user.is_authenticated and current_user.is_premium %}
-            <p>Premium is active, so the full table is available.</p>
-          {% elif current_user.is_authenticated %}
-            <p>You are signed in on the preview plan. Upgrade to unlock the full list.</p>
-          {% else %}
-            <p>Sign in or start checkout to unlock the premium dataset.</p>
-          {% endif %}
+          <span>{{ total_domains }} tracked domains{% if hidden_count > 0 %} · {{ hidden_count }} premium-only{% endif %}</span>
         </div>
 
         <div class="sidebar-spacer"></div>
@@ -633,7 +507,9 @@
             </summary>
             <div class="menu-items">
               <a class="menu-item" href="{{ url_for('user_page') }}">Account</a>
-              <a class="menu-item" href="{{ url_for('checkout') }}">Billing</a>
+              {% if not current_user.is_premium %}
+                <a class="menu-item" href="{{ url_for('checkout') }}">Billing</a>
+              {% endif %}
               <a class="menu-item" href="{{ url_for('logout') }}">Log out</a>
             </div>
           </details>
@@ -642,7 +518,7 @@
             <summary class="user-summary">
               <div class="avatar">G</div>
               <div class="user-copy">
-                <strong>Guest viewer</strong>
+                <strong>Guest</strong>
                 <span>Preview access</span>
               </div>
             </summary>
@@ -655,156 +531,130 @@
       </aside>
 
       <main class="content">
-        <header class="site-header">
-          <div>
-            <div class="header-overline">Overview · Sidebar inset</div>
-            <h1>Expired domains dashboard</h1>
-            <div class="header-subtitle">A server-rendered Flask version of the shadcn dashboard pattern with a sidebar, section cards, chart area, and an operations-style data table.</div>
+        <header class="header">
+          <div class="header-left">
+            <button class="icon-button" type="button" id="sidebar-toggle" aria-label="Toggle sidebar">☰</button>
+            <div class="header-title">
+              <strong>Domain Dashboard</strong>
+              <div class="header-subtitle">Minimal, compact, and optimized for scanning large domain lists.</div>
+            </div>
           </div>
-          <div class="header-actions">
-            <span class="pill">Release {{ release_date if release_date else 'pending' }}</span>
-            {% if current_user.is_authenticated and current_user.is_premium %}
-              <span class="pill">Premium active</span>
-            {% elif current_user.is_authenticated %}
-              <a class="pill primary" href="{{ url_for('checkout') }}">Upgrade</a>
-            {% else %}
-              <a class="pill" href="{{ url_for('login') }}">Login</a>
-              <a class="pill primary" href="{{ url_for('checkout') }}">Get started</a>
+          <div class="header-right">
+            {% if current_user.is_authenticated and not current_user.is_premium %}
+              <a class="primary-button" href="{{ url_for('checkout') }}">Upgrade</a>
+            {% endif %}
+            {% if not current_user.is_authenticated %}
+              <a class="secondary-button" href="{{ url_for('login') }}">Login</a>
             {% endif %}
           </div>
         </header>
 
-        <div class="main-scroll">
-          <div class="main-stack">
-            <section class="section-cards">
-              {% for stat in dashboard_stats %}
-                <article class="metric-card">
-                  <div class="metric-label">{{ stat.label }}</div>
-                  <div class="metric-value">{{ stat.value }}</div>
-                  <div class="metric-caption">{{ stat.detail }}</div>
-                </article>
-              {% endfor %}
-            </section>
+        <div class="main">
+          <section class="metrics-grid">
+            {% for stat in dashboard_stats %}
+              <article class="card">
+                <div class="card-label">{{ stat.label }}</div>
+                <div class="card-value">{{ stat.value }}</div>
+                <div class="card-caption">{{ stat.detail }}</div>
+              </article>
+            {% endfor %}
+          </section>
 
-            <section class="chart-card" id="chart-area">
-              <div class="chart-head">
-                <div>
-                  <h3>Chart area interactive</h3>
-                  <p>Plotting the first six visible domains so the layout matches the chart panel from the reference dashboard.</p>
-                </div>
-                <div class="chart-actions">
-                  <span class="status-badge">Overview</span>
-                  <span class="status-badge">Top 6 domains</span>
-                </div>
+          <section class="table-card" id="domain-table">
+            <div class="table-topbar">
+              <div class="table-title">
+                <h2>Domains</h2>
+                <p>Compact data table with sticky headers, search, and pagination.</p>
               </div>
-
-              <div class="chart-canvas">
-                {% if chart_points and chart_has_metrics %}
-                  <svg viewBox="0 0 400 190" width="100%" height="220" role="img" aria-label="Moz metrics chart">
-                    <line class="chart-grid" x1="24" y1="32" x2="384" y2="32"></line>
-                    <line class="chart-grid" x1="24" y1="86" x2="384" y2="86"></line>
-                    <line class="chart-grid" x1="24" y1="140" x2="384" y2="140"></line>
-                    <polyline class="line-links" points="{% for point in chart_points %}{{ point.x }},{{ point.links_y }} {% endfor %}"></polyline>
-                    <polyline class="line-da" points="{% for point in chart_points %}{{ point.x }},{{ point.da_y }} {% endfor %}"></polyline>
-                    {% for point in chart_points %}
-                      <circle class="chart-dot-links" cx="{{ point.x }}" cy="{{ point.links_y }}" r="4"></circle>
-                      <circle class="chart-dot-da" cx="{{ point.x }}" cy="{{ point.da_y }}" r="4"></circle>
-                    {% endfor %}
-                  </svg>
-                  <div class="chart-legend">
-                    <span><span class="legend-dot" style="background:#f8fafc"></span> Domain Authority</span>
-                    <span><span class="legend-dot" style="background:#60a5fa"></span> Linking Root Domains</span>
-                  </div>
-                  <div class="chart-labels">
-                    {% for point in chart_points %}
-                      <span title="{{ point.label }}">{{ point.label }}</span>
-                    {% endfor %}
-                  </div>
-                {% else %}
-                  <p class="table-note">Moz metrics have not been populated yet, so the chart area is waiting for DA/linking-domain data.</p>
-                {% endif %}
+              <div class="toolbar-actions">
+                <form class="search-form" method="get" action="{{ url_for('index') }}">
+                  <input class="search-input" type="search" name="q" value="{{ search_query }}" placeholder="Search domain name...">
+                  <select class="page-size-select" name="page_size" aria-label="Rows per page">
+                    <option value="10" {% if page_size == 10 %}selected{% endif %}>10 rows</option>
+                    <option value="25" {% if page_size == 25 %}selected{% endif %}>25 rows</option>
+                    <option value="50" {% if page_size == 50 %}selected{% endif %}>50 rows</option>
+                  </select>
+                  <button class="primary-button" type="submit">Search</button>
+                </form>
               </div>
-            </section>
+            </div>
 
-            <section class="table-card" id="domains-table">
-              <div class="table-toolbar">
-                <div>
-                  <h3>Data table</h3>
-                  <p>Structured to resemble the block you shared: toolbar tabs, controls, and a dense operations table.</p>
-                </div>
-                <div class="toolbar-actions">
-                  <div class="tabs">
-                    <span class="tab active">Outline</span>
-                    <span class="tab">Past performance</span>
-                    <span class="tab">Key personnel</span>
-                    <span class="tab">Focus docs</span>
-                  </div>
-                  <span class="pill">Columns</span>
-                  <span class="pill">Add section</span>
-                </div>
-              </div>
+            <div class="toolbar-note">
+              Showing {{ start_index }}-{{ end_index }} of {{ total_filtered }} matching domains{% if search_query %} for “{{ search_query }}”{% endif %}.
+            </div>
 
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th></th>
-                      <th></th>
-                      <th>Domain</th>
-                      <th>Type</th>
-                      <th>Status</th>
-                      <th class="numeric">DA</th>
-                      <th class="numeric">Links</th>
-                      <th>Release</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% if domains %}
-                      {% for domain in domains %}
-                        {% set has_metrics = domain.da is not none or domain.linking_root_domains is not none %}
-                        {% set resolved_release = domain.release_date if domain.release_date is defined and domain.release_date is not none else release_date if release_date else 'N/A' %}
-                        <tr>
-                          <td class="icon-cell"><span class="drag-handle">⋮⋮</span></td>
-                          <td class="checkbox-cell"><span class="checkbox"></span></td>
-                          <td>
-                            <span class="domain-button">
-                              <strong>{{ domain.domain_name }}</strong>
-                              <span class="subdomain-note">{{ 'Visible in full premium list' if current_user.is_authenticated and current_user.is_premium else 'Preview row' }}</span>
-                            </span>
-                          </td>
-                          <td><span class="badge">{{ '.se' if domain.domain_name.endswith('.se') else '.nu' }}</span></td>
-                          <td>
-                            <span class="badge {% if has_metrics %}done{% else %}waiting{% endif %}">
-                              {{ 'Done' if has_metrics else 'In Process' }}
-                            </span>
-                          </td>
-                          <td class="numeric">{{ domain.da if domain.da is not none else '—' }}</td>
-                          <td class="numeric">{{ domain.linking_root_domains if domain.linking_root_domains is not none else '—' }}</td>
-                          <td>{{ resolved_release }}</td>
-                          <td class="actions-cell">⋯</td>
-                        </tr>
-                      {% endfor %}
-                    {% else %}
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Domain</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th class="numeric">DA</th>
+                    <th class="numeric">Links</th>
+                    <th>Release Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% if domains %}
+                    {% for domain in domains %}
+                      {% set has_metrics = domain.da is not none or domain.linking_root_domains is not none %}
+                      {% set resolved_release = domain.release_date if domain.release_date is defined and domain.release_date is not none else release_date if release_date else 'N/A' %}
                       <tr>
-                        <td colspan="9" style="padding: 28px 16px; text-align:center; color: var(--muted);">No domains are available right now.</td>
+                        <td>
+                          <div class="domain-cell">
+                            <strong>{{ domain.domain_name }}</strong>
+                            <div class="domain-meta">{{ 'Visible in premium dataset' if current_user.is_authenticated and current_user.is_premium else 'Preview dataset row' }}</div>
+                          </div>
+                        </td>
+                        <td><span class="badge">{{ '.se' if domain.domain_name.endswith('.se') else '.nu' }}</span></td>
+                        <td>
+                          <span class="badge {% if has_metrics %}success{% else %}warning{% endif %}">{{ 'Ready' if has_metrics else 'Pending Moz' }}</span>
+                        </td>
+                        <td class="numeric">{{ domain.da if domain.da is not none else '—' }}</td>
+                        <td class="numeric">{{ domain.linking_root_domains if domain.linking_root_domains is not none else '—' }}</td>
+                        <td>{{ resolved_release }}</td>
                       </tr>
-                    {% endif %}
-                  </tbody>
-                </table>
-              </div>
+                    {% endfor %}
+                  {% else %}
+                    <tr>
+                      <td colspan="6" style="padding: 18px 14px; text-align:center; color: var(--muted);">No domains matched your current filters.</td>
+                    </tr>
+                  {% endif %}
+                </tbody>
+              </table>
+            </div>
 
-              <div class="footer-row">
-                <div>{{ domains|length }} of {{ total_domains }} row(s) loaded in the current view.</div>
-                <div class="pager">
-                  <span class="ghost-btn">Rows {{ domains|length }}</span>
-                  <span class="ghost-btn">Page 1</span>
-                </div>
+            <div class="table-footer">
+              <div>{{ domains|length }} row(s) on this page · default page size {{ page_size }}</div>
+              <div class="pagination">
+                <a class="page-link" href="{{ url_for('index', q=search_query, page=page-1, page_size=page_size) }}" aria-disabled="{{ 'true' if page <= 1 else 'false' }}">Previous</a>
+                <span class="page-current">Page {{ page }} of {{ total_pages }}</span>
+                <a class="page-link" href="{{ url_for('index', q=search_query, page=page+1, page_size=page_size) }}" aria-disabled="{{ 'true' if page >= total_pages else 'false' }}">Next</a>
               </div>
-            </section>
-          </div>
+            </div>
+          </section>
         </div>
       </main>
     </div>
+
+    <script>
+      (function () {
+        const storageKey = "linktracker-sidebar-collapsed";
+        const body = document.body;
+        const button = document.getElementById("sidebar-toggle");
+        const saved = window.localStorage.getItem(storageKey);
+        if (saved === "true" && window.innerWidth > 1080) {
+          body.classList.add("sidebar-collapsed");
+        }
+        if (button) {
+          button.addEventListener("click", function () {
+            if (window.innerWidth <= 1080) return;
+            body.classList.toggle("sidebar-collapsed");
+            window.localStorage.setItem(storageKey, body.classList.contains("sidebar-collapsed"));
+          });
+        }
+      })();
+    </script>
   </body>
 </html>
