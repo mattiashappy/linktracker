@@ -429,10 +429,14 @@ AUTH_TEMPLATE = """
       {% if description %}<p class="meta">{{ description }}</p>{% endif %}
       {% if error %}<div class="error">{{ error }}</div>{% endif %}
       <form method="post">
-        <label for="email">{{ identifier_label or 'Email' }}</label>
-        <input id="email" name="email" type="{{ identifier_type or 'email' }}" required>
-        <label for="password">Password</label>
-        <input id="password" name="password" type="password" required>
+        {% if show_email_field is not defined or show_email_field %}
+          <label for="email">{{ identifier_label or 'Email' }}</label>
+          <input id="email" name="email" type="{{ identifier_type or 'email' }}" value="{{ email_value or '' }}" required>
+        {% endif %}
+        {% if show_password_field is not defined or show_password_field %}
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" required>
+        {% endif %}
         <button type="submit">{{ submit_label }}</button>
       </form>
       <p class="meta">
@@ -450,6 +454,42 @@ def get_admin_credentials():
     admin_username = (os.environ.get("username") or os.environ.get("ADMIN_USERNAME") or "").strip()
     admin_password = (os.environ.get("user_password") or os.environ.get("ADMIN_PASSWORD") or "").strip()
     return admin_username, admin_password
+
+
+def normalize_email(email: str) -> str:
+    return email.strip().lower()
+
+
+def get_user_by_email(email: str):
+    normalized = normalize_email(email)
+    if not normalized:
+        return None
+    return User.query.filter_by(email=normalized).first()
+
+
+def get_existing_stripe_customer(email: str):
+    normalized = normalize_email(email)
+    if not normalized:
+        return None
+
+    try:
+        customers = stripe.Customer.list(email=normalized, limit=1).get("data", [])
+    except stripe.error.StripeError:
+        return None
+    return customers[0] if customers else None
+
+
+def stripe_customer_has_active_subscription(customer_id: str) -> bool:
+    if not customer_id:
+        return False
+
+    try:
+        subscriptions = stripe.Subscription.list(customer=customer_id, status="all", limit=10).get("data", [])
+    except stripe.error.StripeError:
+        return False
+
+    active_statuses = {"active", "trialing", "past_due", "unpaid", "incomplete"}
+    return any(subscription.get("status") in active_statuses for subscription in subscriptions)
 
 @login_manager.user_loader
 def load_user(user_id: str):
@@ -572,7 +612,7 @@ def login():
             session["is_admin"] = True
             return redirect(url_for("admin"))
 
-        user = User.query.filter_by(email=identifier.lower()).first()
+        user = get_user_by_email(identifier)
         if user is None or not user.check_password(password):
             error = "Invalid login credentials."
         else:
@@ -650,7 +690,7 @@ def admin():
 
 
 
-@app.route("/checkout")
+@app.route("/checkout", methods=["GET", "POST"])
 def checkout():
     if current_user.is_authenticated and current_user.is_premium:
         return redirect(url_for("index"))
@@ -659,13 +699,75 @@ def checkout():
     if not get_stripe_secret_key() or not price_id:
         abort(500, "Stripe is not configured. Set STRIPE_SECRET_KEY/Secret_key_test and STRIPE_PRICE_ID/STRIPE_PRICE_ID_TEST.")
 
-    try:
-        checkout_session = stripe.checkout.Session.create(
-            mode="subscription",
-            line_items=[{"price": price_id, "quantity": 1}],
-            success_url=url_for("complete_setup", _external=True) + "?session_id={CHECKOUT_SESSION_ID}",
-            cancel_url=url_for("index", _external=True),
+    error = None
+    email_value = current_user.email if current_user.is_authenticated else request.form.get("email", "").strip()
+    user = current_user if current_user.is_authenticated else None
+    existing_customer_id = None
+
+    if not current_user.is_authenticated and request.method == "GET":
+        return render_template_string(
+            AUTH_TEMPLATE,
+            title="Start Premium Checkout",
+            submit_label="Continue to Stripe",
+            error=None,
+            description="Use your email first so we can ensure every email address maps to only one account and one Stripe customer.",
+            identifier_label="Email",
+            identifier_type="email",
+            show_email_field=True,
+            show_password_field=False,
+            email_value="",
         )
+
+    if not current_user.is_authenticated:
+        email_value = normalize_email(email_value)
+        if not email_value:
+            error = "Please enter your email address."
+        else:
+            user = get_user_by_email(email_value)
+            if user is not None:
+                error = "An account or payment profile already exists for this email. Please log in to continue."
+            else:
+                existing_customer = get_existing_stripe_customer(email_value)
+                if existing_customer is not None:
+                    existing_customer_id = existing_customer.get("id")
+                    if stripe_customer_has_active_subscription(existing_customer_id):
+                        error = "A Stripe subscription already exists for this email. Please log in to the existing account instead."
+
+    if error:
+        return render_template_string(
+            AUTH_TEMPLATE,
+            title="Start Premium Checkout",
+            submit_label="Continue to Stripe",
+            error=error,
+            description="Use your email first so we can ensure every email address maps to only one account and one Stripe customer.",
+            identifier_label="Email",
+            identifier_type="email",
+            show_email_field=True,
+            show_password_field=False,
+            email_value=email_value,
+        )
+
+    checkout_kwargs = {
+        "mode": "subscription",
+        "line_items": [{"price": price_id, "quantity": 1}],
+        "success_url": url_for("complete_setup", _external=True) + "?session_id={CHECKOUT_SESSION_ID}",
+        "cancel_url": url_for("index", _external=True),
+    }
+
+    checkout_email = normalize_email(current_user.email if current_user.is_authenticated else email_value)
+    if user is not None and user.is_authenticated:
+        checkout_kwargs["client_reference_id"] = str(user.id)
+        if user.stripe_customer_id:
+            checkout_kwargs["customer"] = user.stripe_customer_id
+        else:
+            checkout_kwargs["customer_email"] = checkout_email
+    elif existing_customer_id:
+        checkout_kwargs["customer"] = existing_customer_id
+    else:
+        checkout_kwargs["customer_email"] = checkout_email
+
+    try:
+        checkout_session = stripe.checkout.Session.create(**checkout_kwargs)
     except stripe.error.StripeError as exc:
         return abort(500, f"Stripe checkout error: {str(exc)}. Make sure the price ID matches the configured Stripe key and test/live mode.")
 
@@ -700,16 +802,19 @@ def webhook():
                 or session.get("customer_email")
             )
             if email:
-                email = email.lower()
-                user = User.query.filter_by(email=email).first()
+                email = normalize_email(email)
+                user = get_user_by_email(email)
 
                 if user is None:
                     user = User(email=email)
                     db.session.add(user)
 
         if user is not None:
+            session_customer_id = session.get("customer")
+            if user.stripe_customer_id and session_customer_id and user.stripe_customer_id != session_customer_id:
+                return {"status": "ignored_duplicate_checkout"}, 200
             user.is_premium = True
-            user.stripe_customer_id = session.get("customer")
+            user.stripe_customer_id = session_customer_id or user.stripe_customer_id
             db.session.commit()
 
     return {"status": "ok"}, 200
@@ -726,7 +831,7 @@ def complete_setup():
         email = (checkout_session.get("customer_details") or {}).get("email")
         if not email:
             return abort(400, "Could not verify email from Stripe.")
-        email = email.lower()
+        email = normalize_email(email)
     except Exception as e:
         return abort(400, f"Session error: {str(e)}")
 
@@ -736,14 +841,19 @@ def complete_setup():
         if not password:
             error = "Please enter a password."
         else:
-            user = User.query.filter_by(email=email).first()
+            user = get_user_by_email(email)
             if user is None:
                 user = User(email=email)
                 db.session.add(user)
 
+            session_customer_id = checkout_session.get("customer")
+            if user.stripe_customer_id and session_customer_id and user.stripe_customer_id != session_customer_id:
+                error = "This email is already linked to a different payment profile. Please log in to the existing account instead."
+                return render_template_string(SETUP_TEMPLATE, email=email, error=error)
+
             user.set_password(password)
             user.is_premium = True
-            user.stripe_customer_id = checkout_session.get("customer")
+            user.stripe_customer_id = session_customer_id or user.stripe_customer_id
             db.session.commit()
             login_user(user)
             return redirect(url_for("index"))
