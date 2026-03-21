@@ -725,12 +725,20 @@ def complete_setup():
     except Exception as e:
         return abort(400, f"Session error: {str(e)}")
 
+    error = None
     if request.method == "POST":
-        password = request.form.get("password")
-        user = User.query.filter_by(email=email).first()
+        password = request.form.get("password", "")
+        if not password:
+            error = "Please enter a password."
+        else:
+            user = User.query.filter_by(email=email).first()
+            if user is None:
+                user = User(email=email)
+                db.session.add(user)
 
-        if user:
             user.set_password(password)
+            user.is_premium = True
+            user.stripe_customer_id = checkout_session.get("customer")
             db.session.commit()
             login_user(user)
             return redirect(url_for("index"))
@@ -738,11 +746,12 @@ def complete_setup():
     SETUP_TEMPLATE = """
     <!doctype html>
     <html lang="en">
-      <head><title>Complete Setup</title><style>body { font-family: Arial; background: #f4f7fb; padding: 32px; } .card { max-width: 420px; margin: 0 auto; background: #fff; padding: 24px; border-radius: 12px; } input { width: 100%; padding: 12px; margin: 8px 0 14px; border: 1px solid #d1d5db; border-radius: 8px; box-sizing: border-box; } button { background: #111827; color: #fff; padding: 12px 16px; border-radius: 8px; border: 0; cursor: pointer; }</style></head>
+      <head><title>Complete Setup</title><style>body { font-family: Arial; background: #f4f7fb; padding: 32px; } .card { max-width: 420px; margin: 0 auto; background: #fff; padding: 24px; border-radius: 12px; } input { width: 100%; padding: 12px; margin: 8px 0 14px; border: 1px solid #d1d5db; border-radius: 8px; box-sizing: border-box; } button { background: #111827; color: #fff; padding: 12px 16px; border-radius: 8px; border: 0; cursor: pointer; } .error { margin-bottom: 14px; color: #b91c1c; }</style></head>
       <body>
         <div class="card">
           <h1>Welcome!</h1>
           <p>Your payment was successful. Please set a password for <strong>{{ email }}</strong> to complete your account.</p>
+          {% if error %}<div class="error">{{ error }}</div>{% endif %}
           <form method="post">
             <label>Password</label>
             <input name="password" type="password" required>
@@ -752,7 +761,7 @@ def complete_setup():
       </body>
     </html>
     """
-    return render_template_string(SETUP_TEMPLATE, email=email)
+    return render_template_string(SETUP_TEMPLATE, email=email, error=error)
 
 
 if __name__ == "__main__":
