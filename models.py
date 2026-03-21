@@ -9,7 +9,7 @@ db = SQLAlchemy()
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(255), unique=True, nullable=False, index=True)
-    password_hash = db.Column(db.String(255), nullable=False)
+    password_hash = db.Column(db.String(255), nullable=True)
     is_premium = db.Column(db.Boolean, default=False, nullable=False)
     stripe_customer_id = db.Column(db.String(255), nullable=True)
 
@@ -17,6 +17,8 @@ class User(UserMixin, db.Model):
         self.password_hash = generate_password_hash(password)
 
     def check_password(self, password: str) -> bool:
+        if not self.password_hash:
+            return False
         return check_password_hash(self.password_hash, password)
 
 

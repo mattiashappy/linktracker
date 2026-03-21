@@ -438,6 +438,10 @@ def ensure_database_schema():
         connection.execute(db.text("ALTER TABLE domain ADD COLUMN IF NOT EXISTS release_date DATE"))
         connection.execute(db.text("CREATE INDEX IF NOT EXISTS ix_domain_release_date ON domain (release_date)"))
         connection.execute(db.text("UPDATE domain SET release_date = fetch_date WHERE release_date IS NULL"))
+        try:
+            connection.execute(db.text('ALTER TABLE "user" ALTER COLUMN password_hash DROP NOT NULL'))
+        except Exception:
+            pass
 
 
 with app.app_context():
@@ -529,35 +533,7 @@ def index():
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
-    error = None
-    if request.method == "POST":
-        email = request.form.get("email", "").strip().lower()
-        password = request.form.get("password", "")
-
-        if not email or not password:
-            error = "Email and password are required."
-        elif User.query.filter_by(email=email).first():
-            error = "An account with that email already exists."
-        else:
-            user = User(email=email)
-            user.set_password(password)
-            db.session.add(user)
-            db.session.commit()
-            login_user(user)
-
-            if stripe.api_key and os.environ.get("STRIPE_PRICE_ID"):
-                return redirect(url_for("checkout"))
-            return redirect(url_for("index"))
-
-    return render_template_string(
-        AUTH_TEMPLATE,
-        title="Register & Subscribe",
-        submit_label="Continue to Stripe",
-        error=error,
-        description="Create your account first and then continue to Stripe to activate your subscription.",
-        identifier_label="Email",
-        identifier_type="email",
-    )
+    return redirect(url_for("checkout"))
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -619,6 +595,12 @@ def admin():
         return redirect(url_for("login"))
 
     today = datetime.now(timezone.utc).date()
+    try:
+        current_release_date_text = fetch_release_date()
+        current_release_date = date.fromisoformat(current_release_date_text) if current_release_date_text else today
+    except Exception:
+        current_release_date = today
+
     today_rows = Domain.query.filter_by(fetch_date=today).order_by(Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc()).all()
     if len(today_rows) <= 25:
         try:
@@ -645,9 +627,8 @@ def admin():
 
 
 @app.route("/checkout")
-@login_required
 def checkout():
-    if current_user.is_premium:
+    if current_user.is_authenticated and current_user.is_premium:
         return redirect(url_for("index"))
 
     price_id = os.environ.get("STRIPE_PRICE_ID", "")
@@ -657,11 +638,8 @@ def checkout():
     checkout_session = stripe.checkout.Session.create(
         mode="subscription",
         line_items=[{"price": price_id, "quantity": 1}],
-        success_url=url_for("index", _external=True) + "?checkout=success",
+        success_url=url_for("complete_setup", _external=True) + "?session_id={CHECKOUT_SESSION_ID}",
         cancel_url=url_for("index", _external=True),
-        client_reference_id=str(current_user.id),
-        customer_email=current_user.email,
-        metadata={"user_id": str(current_user.id)},
     )
     return redirect(checkout_session.url, code=303)
 
@@ -694,7 +672,12 @@ def webhook():
                 or session.get("customer_email")
             )
             if email:
-                user = User.query.filter_by(email=email.lower()).first()
+                email = email.lower()
+                user = User.query.filter_by(email=email).first()
+
+                if user is None:
+                    user = User(email=email)
+                    db.session.add(user)
 
         if user is not None:
             user.is_premium = True
@@ -702,6 +685,51 @@ def webhook():
             db.session.commit()
 
     return {"status": "ok"}, 200
+
+
+@app.route("/complete_setup", methods=["GET", "POST"])
+def complete_setup():
+    session_id = request.args.get("session_id")
+    if not session_id:
+        return redirect(url_for("index"))
+
+    try:
+        checkout_session = stripe.checkout.Session.retrieve(session_id)
+        email = (checkout_session.get("customer_details") or {}).get("email")
+        if not email:
+            return abort(400, "Could not verify email from Stripe.")
+        email = email.lower()
+    except Exception as e:
+        return abort(400, f"Session error: {str(e)}")
+
+    if request.method == "POST":
+        password = request.form.get("password")
+        user = User.query.filter_by(email=email).first()
+
+        if user:
+            user.set_password(password)
+            db.session.commit()
+            login_user(user)
+            return redirect(url_for("index"))
+
+    SETUP_TEMPLATE = """
+    <!doctype html>
+    <html lang="en">
+      <head><title>Complete Setup</title><style>body { font-family: Arial; background: #f4f7fb; padding: 32px; } .card { max-width: 420px; margin: 0 auto; background: #fff; padding: 24px; border-radius: 12px; } input { width: 100%; padding: 12px; margin: 8px 0 14px; border: 1px solid #d1d5db; border-radius: 8px; box-sizing: border-box; } button { background: #111827; color: #fff; padding: 12px 16px; border-radius: 8px; border: 0; cursor: pointer; }</style></head>
+      <body>
+        <div class="card">
+          <h1>Welcome!</h1>
+          <p>Your payment was successful. Please set a password for <strong>{{ email }}</strong> to complete your account.</p>
+          <form method="post">
+            <label>Password</label>
+            <input name="password" type="password" required>
+            <button type="submit">Complete Setup</button>
+          </form>
+        </div>
+      </body>
+    </html>
+    """
+    return render_template_string(SETUP_TEMPLATE, email=email)
 
 
 if __name__ == "__main__":
