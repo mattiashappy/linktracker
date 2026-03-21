@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Expired Domains with Moz Metrics</title>
+    <style>
+      :root {
+        --background: #f8fafc;
+        --foreground: #0f172a;
+        --card: #ffffff;
+        --muted: #64748b;
+        --border: #e2e8f0;
+        --primary: #0f172a;
+        --primary-foreground: #f8fafc;
+        --secondary: #f1f5f9;
+        --secondary-foreground: #0f172a;
+        --accent: #eef2ff;
+        --accent-foreground: #312e81;
+        --ring: rgba(15, 23, 42, 0.08);
+      }
+      * { box-sizing: border-box; }
+      body {
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+        color: var(--foreground);
+        margin: 0;
+        padding: 32px 20px 64px;
+      }
+      .container {
+        max-width: 1240px;
+        margin: 0 auto;
+        background: rgba(255, 255, 255, 0.82);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(226, 232, 240, 0.9);
+        border-radius: 24px;
+        box-shadow: 0 24px 80px rgba(15, 23, 42, 0.08);
+        padding: 28px;
+      }
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 16px;
+        flex-wrap: wrap;
+        padding-bottom: 20px;
+        border-bottom: 1px solid var(--border);
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 2rem;
+        letter-spacing: -0.04em;
+      }
+      p {
+        margin: 6px 0;
+        color: var(--muted);
+      }
+      .actions {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 10px 16px;
+        border-radius: 999px;
+        text-decoration: none;
+        border: 1px solid transparent;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.15s ease;
+      }
+      .btn:hover { transform: translateY(-1px); }
+      .btn-dark {
+        background: var(--primary);
+        color: var(--primary-foreground);
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
+      }
+      .btn-outline {
+        background: rgba(255, 255, 255, 0.72);
+        color: var(--secondary-foreground);
+        border-color: var(--border);
+      }
+      .stats {
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-top: 22px;
+      }
+      .stat {
+        background: var(--card);
+        padding: 18px;
+        border-radius: 18px;
+        min-width: 200px;
+        border: 1px solid var(--border);
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+      }
+      .stat strong {
+        display: block;
+        color: var(--muted);
+        font-size: 0.875rem;
+        margin-bottom: 6px;
+      }
+      .table-card {
+        margin-top: 22px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        background: var(--card);
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th, td {
+        text-align: left;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border);
+      }
+      th {
+        background: #f8fafc;
+        color: var(--foreground);
+        font-size: 0.875rem;
+      }
+      tr:nth-child(even) { background: #fcfcfd; }
+      .tooltip {
+        position: relative;
+        display: inline-block;
+        cursor: help;
+        border-bottom: 1px dotted rgba(15, 23, 42, 0.25);
+      }
+      .tooltip .tooltiptext {
+        visibility: hidden;
+        width: 280px;
+        background: var(--primary);
+        color: var(--primary-foreground);
+        text-align: left;
+        border-radius: 14px;
+        padding: 12px 14px;
+        position: absolute;
+        z-index: 1;
+        bottom: 125%;
+        left: 50%;
+        margin-left: -140px;
+        box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+        font-weight: 500;
+        line-height: 1.45;
+        opacity: 0;
+        transition: opacity 0.2s ease-in-out;
+      }
+      .tooltip:hover .tooltiptext {
+        visibility: visible;
+        opacity: 1;
+      }
+      .premium-box {
+        margin-top: 22px;
+        padding: 18px;
+        border-radius: 18px;
+        background: var(--accent);
+        border: 1px solid #c7d2fe;
+        color: var(--accent-foreground);
+      }
+      .premium-box strong { color: var(--accent-foreground); }
+      .empty {
+        margin-top: 16px;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="topbar">
+        <div>
+          <h1>Expired Domains with Moz Metrics</h1>
+          <p>Daily domains are fetched from the database and sorted by highest Domain Authority first.</p>
+          {% if using_live_fallback %}
+            <p><strong>Showing a live fallback list because the database is currently empty.</strong></p>
+          {% endif %}
+        </div>
+        <div class="actions">
+          {% if current_user.is_authenticated %}
+            <span>{{ current_user.email }}{% if current_user.is_premium %} · Premium{% endif %}</span>
+            <a class="btn btn-outline" href="{{ url_for('user_page') }}">User Page</a>
+            <a class="btn btn-outline" href="{{ url_for('logout') }}">Logout</a>
+          {% else %}
+            <a class="btn btn-outline" href="{{ url_for('login') }}">Login</a>
+            <a class="btn btn-dark" href="{{ url_for('checkout') }}">Get Started</a>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="stats">
+        <div class="stat">
+          <strong>Today's domains</strong><br>{{ total_domains }}
+        </div>
+      </div>
+
+      {% if domains %}
+        <div class="table-card"><table>
+          <thead>
+            <tr>
+              <th>Domain</th>
+              <th>
+                <span class="tooltip">Domain Authority (DA)
+                  <span class="tooltiptext">1-100 score predicting how well a website will rank on search engines. Based largely on link quality. Higher is better.</span>
+                </span>
+              </th>
+              <th>
+                <span class="tooltip">Linking Root Domains
+                  <span class="tooltiptext">The total number of unique websites linking to this domain. A higher number indicates a more diverse, trustworthy, and natural link profile.</span>
+                </span>
+              </th>
+              <th>Release date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for domain in domains %}
+              <tr>
+                <td>{{ domain.domain_name }}</td>
+                <td>{{ domain.da if domain.da is not none else 'N/A' }}</td>
+                <td>{{ domain.linking_root_domains if domain.linking_root_domains is not none else 'N/A' }}</td>
+                <td>{{ domain.release_date if domain.release_date is defined and domain.release_date is not none else release_date if release_date else 'N/A' }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table></div>
+      {% else %}
+        <p class="empty">No domains are available right now.</p>
+      {% endif %}
+
+      {% if not current_user.is_authenticated or not current_user.is_premium %}
+        <div class="premium-box">
+          <strong>You are seeing 25 free domains today.</strong>
+          {% if hidden_count > 0 %}
+            <div style="margin-top: 8px;">There are {{ hidden_count }} more domains available. Upgrade to Premium to unlock the full daily list.</div>
+          {% else %}
+            <div style="margin-top: 8px;">Upgrade to Premium to see more domains at the bottom of the daily list as new rows are unlocked.</div>
+          {% endif %}
+          {% if current_user.is_authenticated %}
+            <div style="margin-top: 12px;">
+              <a class="btn btn-dark" href="{{ url_for('checkout') }}">Upgrade Now</a>
+            </div>
+          {% else %}
+            <div style="margin-top: 12px; display: flex; gap: 12px; flex-wrap: wrap;">
+              <a class="btn btn-outline" href="{{ url_for('login') }}">Login</a>
+              <a class="btn btn-dark" href="{{ url_for('checkout') }}">Get Started</a>
+            </div>
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>
+  </body>
+</html>
