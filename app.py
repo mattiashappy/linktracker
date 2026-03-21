@@ -614,6 +614,38 @@ def stripe_customer_has_active_subscription(customer_id: str) -> bool:
     active_statuses = {"active", "trialing", "past_due", "unpaid", "incomplete"}
     return any(subscription.get("status") in active_statuses for subscription in subscriptions)
 
+
+def build_dashboard_chart_points(domains):
+    chart_domains = list(domains[:6])
+    if not chart_domains:
+        return []
+
+    max_da = max((domain.da or 0) for domain in chart_domains) or 1
+    max_links = max((domain.linking_root_domains or 0) for domain in chart_domains) or 1
+    count = len(chart_domains)
+    width = 360
+    start_x = 24
+    step = width / max(count - 1, 1)
+    base_y = 172
+    range_y = 112
+
+    points = []
+    for index, domain in enumerate(chart_domains):
+        x = start_x + (step * index if count > 1 else width / 2)
+        da_value = domain.da or 0
+        links_value = domain.linking_root_domains or 0
+        points.append(
+            {
+                "label": domain.domain_name[:12],
+                "x": round(x, 2),
+                "da_y": round(base_y - ((da_value / max_da) * range_y), 2),
+                "links_y": round(base_y - ((links_value / max_links) * range_y), 2),
+                "da": da_value,
+                "links": links_value,
+            }
+        )
+    return points
+
 @login_manager.user_loader
 def load_user(user_id: str):
     return db.session.get(User, int(user_id))
@@ -705,6 +737,33 @@ def index():
         if any(domain.da is None and domain.linking_root_domains is None for domain in domains):
             domains = hydrate_visible_domains(domains, active_date)
 
+    domains_with_da = [domain.da for domain in domains if domain.da is not None]
+    domains_with_links = [domain.linking_root_domains for domain in domains if domain.linking_root_domains is not None]
+    chart_points = build_dashboard_chart_points(domains)
+    top_domain = domains[0].domain_name if domains else "No domains yet"
+    dashboard_stats = [
+        {
+            "label": "Visible domains",
+            "value": len(domains),
+            "detail": "Rows loaded in the dashboard table.",
+        },
+        {
+            "label": "Average DA",
+            "value": round(sum(domains_with_da) / len(domains_with_da), 1) if domains_with_da else "N/A",
+            "detail": "Average authority across rows with Moz data.",
+        },
+        {
+            "label": "Hidden by paywall",
+            "value": hidden_count,
+            "detail": "Additional domains available in Premium.",
+        },
+        {
+            "label": "Top domain",
+            "value": top_domain,
+            "detail": "Highest-ranked visible result for the active release.",
+        },
+    ]
+
     return render_template(
         "index.html",
         domains=domains,
@@ -715,6 +774,9 @@ def index():
         using_latest_available=active_date is not None and active_date != today,
         using_live_fallback=using_live_fallback,
         release_date=release_date,
+        dashboard_stats=dashboard_stats,
+        chart_points=chart_points,
+        chart_has_metrics=bool(domains_with_da or domains_with_links),
     )
 
 
