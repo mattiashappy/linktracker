@@ -1,6 +1,6 @@
 import os
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 
 import requests
@@ -225,7 +225,7 @@ def hydrate_visible_domains(domains, fetch_date):
 
 
 
-def ensure_today_domain_snapshot(scraped_domains, visible_domains, fetch_date):
+def ensure_today_domain_snapshot(scraped_domains, visible_domains, fetch_date, release_date_value):
     if not scraped_domains or fetch_date is None:
         return
 
@@ -246,6 +246,7 @@ def ensure_today_domain_snapshot(scraped_domains, visible_domains, fetch_date):
                 da=getattr(visible_row, "da", None),
                 linking_root_domains=getattr(visible_row, "linking_root_domains", None),
                 fetch_date=fetch_date,
+                release_date=release_date_value,
             )
         )
 
@@ -430,20 +431,38 @@ def load_user(user_id: str):
     return db.session.get(User, int(user_id))
 
 
-with app.app_context():
+def ensure_database_schema():
     db.create_all()
+    with db.engine.begin() as connection:
+        connection.execute(db.text("ALTER TABLE domain ADD COLUMN IF NOT EXISTS release_date DATE"))
+        connection.execute(db.text("CREATE INDEX IF NOT EXISTS ix_domain_release_date ON domain (release_date)"))
+        connection.execute(db.text("UPDATE domain SET release_date = fetch_date WHERE release_date IS NULL"))
+
+
+with app.app_context():
+    ensure_database_schema()
 
 
 @app.route("/")
 def index():
     today = datetime.now(timezone.utc).date()
     latest_fetch_date = db.session.query(db.func.max(Domain.fetch_date)).scalar()
-    active_date = today if Domain.query.filter_by(fetch_date=today).first() else latest_fetch_date
+    latest_release_date = db.session.query(db.func.max(Domain.release_date)).scalar()
     using_live_fallback = False
     try:
         release_date = fetch_release_date()
     except Exception:
         release_date = None
+
+    current_release_date = date.fromisoformat(release_date) if release_date else None
+    if current_release_date and Domain.query.filter_by(release_date=current_release_date).first():
+        active_date = current_release_date
+    elif latest_release_date:
+        active_date = latest_release_date
+    elif Domain.query.filter_by(fetch_date=today).first():
+        active_date = today
+    else:
+        active_date = latest_fetch_date
 
     if active_date is None:
         try:
@@ -464,14 +483,16 @@ def index():
             for domain in visible_domains
         ]
         domains = hydrate_visible_domains(domains, today)
-        ensure_today_domain_snapshot(scraped_domains, domains, today)
+        ensure_today_domain_snapshot(scraped_domains, domains, today, current_release_date or today)
         hidden_count = max(total_domains - len(domains), 0)
         using_live_fallback = bool(scraped_domains)
         if any(domain.da is not None or domain.linking_root_domains is not None for domain in domains):
-            active_date = today
+            active_date = current_release_date or today
             using_live_fallback = False
     else:
-        query = Domain.query.filter_by(fetch_date=active_date).order_by(
+        query = Domain.query.filter(
+            (Domain.release_date == active_date) | ((Domain.release_date.is_(None)) & (Domain.fetch_date == active_date))
+        ).order_by(
             Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc()
         )
         total_domains = query.count()
@@ -591,7 +612,7 @@ def admin():
     if len(today_rows) <= 25:
         try:
             scraped_domains = scrape_domains()
-            ensure_today_domain_snapshot(scraped_domains, today_rows, today)
+            ensure_today_domain_snapshot(scraped_domains, today_rows, today, current_release_date or today)
         except Exception:
             pass
 

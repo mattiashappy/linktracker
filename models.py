@@ -26,3 +26,4 @@ class Domain(db.Model):
     da = db.Column(db.Integer, nullable=True)
     linking_root_domains = db.Column(db.Integer, nullable=True)
     fetch_date = db.Column(db.Date, nullable=False, index=True)
+    release_date = db.Column(db.Date, nullable=True, index=True)

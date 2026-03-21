@@ -1,6 +1,6 @@
 import os
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
@@ -8,7 +8,7 @@ import requests
 from bs4 import BeautifulSoup
 from requests.auth import HTTPBasicAuth
 
-from app import app
+from app import app, ensure_database_schema, fetch_release_date
 from models import Domain, db
 
 SOURCE_URL = "https://www.rymdweb.com/domain/snapback/?action=date"
@@ -165,6 +165,8 @@ def fetch_moz_metrics(domains: List[str]) -> List[Dict[str, Any]]:
 
 def refresh_daily_domains() -> None:
     today = datetime.now(timezone.utc).date()
+    release_date_text = fetch_release_date()
+    release_date_value = date.fromisoformat(release_date_text) if release_date_text else today
     domains = scrape_domains()
     if not domains:
         raise RuntimeError("No domains were scraped. Existing database rows were preserved.")
@@ -181,7 +183,7 @@ def refresh_daily_domains() -> None:
         ]
 
     with app.app_context():
-        db.create_all()
+        ensure_database_schema()
         Domain.query.filter_by(fetch_date=today).delete()
         Domain.query.filter(Domain.fetch_date < today).delete()
 
@@ -192,6 +194,7 @@ def refresh_daily_domains() -> None:
                     da=item["da"],
                     linking_root_domains=item["linking_root_domains"],
                     fetch_date=today,
+                    release_date=release_date_value,
                 )
             )
 
