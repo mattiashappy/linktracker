@@ -217,6 +217,7 @@
                   <span class="tooltiptext">The total number of unique websites linking to this domain. A higher number indicates a more diverse, trustworthy, and natural link profile.</span>
                 </span>
               </th>
+              <th>Release date</th>
             </tr>
           </thead>
           <tbody>
@@ -225,6 +226,7 @@
                 <td>{{ domain.domain_name }}</td>
                 <td>{{ domain.da if domain.da is not none else 'N/A' }}</td>
                 <td>{{ domain.linking_root_domains if domain.linking_root_domains is not none else 'N/A' }}</td>
+                <td>{{ domain.release_date if domain.release_date is defined and domain.release_date is not none else release_date if release_date else 'N/A' }}</td>
               </tr>
             {% endfor %}
           </tbody>

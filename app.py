@@ -479,7 +479,12 @@ def index():
             is_limited = False
 
         domains = [
-            SimpleNamespace(domain_name=domain, da=None, linking_root_domains=None)
+            SimpleNamespace(
+                domain_name=domain,
+                da=None,
+                linking_root_domains=None,
+                release_date=current_release_date or release_date,
+            )
             for domain in visible_domains
         ]
         domains = hydrate_visible_domains(domains, today)
