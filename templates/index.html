@@ -1,0 +1,810 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Expired Domains Dashboard</title>
+    <style>
+      :root {
+        --background: #09090b;
+        --panel: #111214;
+        --panel-soft: #18181b;
+        --panel-subtle: #1f2023;
+        --border: rgba(255, 255, 255, 0.08);
+        --foreground: #fafafa;
+        --muted: #a1a1aa;
+        --muted-soft: #71717a;
+        --primary: #fafafa;
+        --primary-foreground: #09090b;
+        --accent: #2563eb;
+        --accent-soft: rgba(37, 99, 235, 0.14);
+        --success: #22c55e;
+        --warning: #f59e0b;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--background);
+        color: var(--foreground);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      a { color: inherit; text-decoration: none; }
+
+      .dashboard-shell {
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: 290px minmax(0, 1fr);
+      }
+
+      .sidebar {
+        border-right: 1px solid var(--border);
+        background: #0a0a0b;
+        padding: 18px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        position: sticky;
+        top: 0;
+        height: 100vh;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 12px;
+      }
+
+      .brand-mark {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(135deg, #2563eb, #7c3aed);
+        color: white;
+        font-weight: 800;
+      }
+
+      .brand-copy strong {
+        display: block;
+        font-size: 0.95rem;
+      }
+
+      .brand-copy span {
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+
+      .sidebar-section-label {
+        padding: 0 12px;
+        color: var(--muted-soft);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 0.72rem;
+      }
+
+      .sidebar-nav {
+        display: grid;
+        gap: 4px;
+      }
+
+      .nav-link {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 11px 12px;
+        border-radius: 12px;
+        color: var(--muted);
+      }
+
+      .nav-link.active,
+      .nav-link:hover {
+        background: var(--panel);
+        color: var(--foreground);
+      }
+
+      .nav-badge {
+        min-width: 24px;
+        padding: 3px 7px;
+        border-radius: 999px;
+        background: var(--panel-subtle);
+        border: 1px solid var(--border);
+        color: var(--muted);
+        text-align: center;
+        font-size: 0.75rem;
+      }
+
+      .sidebar-card {
+        border: 1px solid var(--border);
+        background: var(--panel);
+        border-radius: 18px;
+        padding: 14px;
+      }
+
+      .sidebar-card h3,
+      .chart-card h3,
+      .table-card h3 {
+        margin: 0;
+        font-size: 0.95rem;
+        letter-spacing: -0.02em;
+      }
+
+      .sidebar-card p,
+      .chart-card p,
+      .table-card p,
+      .header-subtitle,
+      .metric-caption,
+      .table-note,
+      .user-menu small,
+      .footer-note {
+        color: var(--muted);
+      }
+
+      .sidebar-stat-list {
+        display: grid;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .sidebar-stat {
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: var(--panel-subtle);
+        padding: 10px 12px;
+      }
+
+      .sidebar-stat strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      .sidebar-spacer { flex: 1; }
+
+      details.user-menu {
+        border: 1px solid var(--border);
+        background: var(--panel);
+        border-radius: 18px;
+        overflow: hidden;
+      }
+
+      .user-summary {
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px;
+        cursor: pointer;
+      }
+
+      .user-summary::-webkit-details-marker { display: none; }
+
+      .avatar {
+        width: 38px;
+        height: 38px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #2563eb, #9333ea);
+        display: grid;
+        place-items: center;
+        font-weight: 700;
+      }
+
+      .user-copy {
+        min-width: 0;
+        display: grid;
+        gap: 3px;
+      }
+
+      .user-copy strong,
+      .user-copy span {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .user-copy span {
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+
+      .menu-items {
+        border-top: 1px solid var(--border);
+        padding: 8px;
+        display: grid;
+        gap: 4px;
+      }
+
+      .menu-item {
+        display: block;
+        padding: 10px 12px;
+        border-radius: 10px;
+        color: var(--muted);
+      }
+
+      .menu-item:hover { background: var(--panel-subtle); color: var(--foreground); }
+
+      .content {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .site-header {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 18px 24px;
+        border-bottom: 1px solid var(--border);
+        background: rgba(9, 9, 11, 0.94);
+        backdrop-filter: blur(14px);
+      }
+
+      .header-overline {
+        color: var(--muted-soft);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 0.72rem;
+      }
+
+      .site-header h1 {
+        margin: 4px 0 0;
+        font-size: clamp(1.5rem, 3vw, 2.1rem);
+        letter-spacing: -0.04em;
+      }
+
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .pill,
+      .tab,
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        color: var(--muted);
+        padding: 8px 12px;
+        font-size: 0.82rem;
+        white-space: nowrap;
+      }
+
+      .pill.primary {
+        background: var(--primary);
+        color: var(--primary-foreground);
+        border-color: transparent;
+      }
+
+      .main-scroll {
+        padding: 18px;
+      }
+
+      .main-stack {
+        display: grid;
+        gap: 18px;
+      }
+
+      .section-cards {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .metric-card,
+      .chart-card,
+      .table-card {
+        border: 1px solid var(--border);
+        background: var(--panel);
+        border-radius: 22px;
+      }
+
+      .metric-card {
+        padding: 18px;
+      }
+
+      .metric-label {
+        color: var(--muted);
+        font-size: 0.82rem;
+        margin-bottom: 10px;
+      }
+
+      .metric-value {
+        font-size: 1.8rem;
+        font-weight: 700;
+        letter-spacing: -0.05em;
+        word-break: break-word;
+      }
+
+      .metric-caption {
+        margin-top: 10px;
+        font-size: 0.82rem;
+        line-height: 1.5;
+      }
+
+      .chart-card {
+        padding: 18px;
+      }
+
+      .chart-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+
+      .chart-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .chart-canvas {
+        margin-top: 18px;
+        border-radius: 18px;
+        border: 1px solid var(--border);
+        background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+        padding: 16px;
+      }
+
+      .chart-grid {
+        stroke: rgba(255,255,255,0.08);
+        stroke-dasharray: 4 8;
+      }
+
+      .line-links {
+        fill: none;
+        stroke: #60a5fa;
+        stroke-width: 3;
+      }
+
+      .line-da {
+        fill: none;
+        stroke: #f8fafc;
+        stroke-width: 3;
+      }
+
+      .chart-dot-da { fill: #f8fafc; }
+      .chart-dot-links { fill: #60a5fa; }
+
+      .chart-legend {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+
+      .legend-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        display: inline-block;
+      }
+
+      .chart-labels {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 12px;
+      }
+
+      .chart-labels span {
+        color: var(--muted-soft);
+        font-size: 0.74rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .table-card {
+        overflow: hidden;
+      }
+
+      .table-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+        padding: 18px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .tabs {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .tab.active {
+        background: var(--foreground);
+        color: var(--background);
+        border-color: transparent;
+      }
+
+      .toolbar-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 980px;
+      }
+
+      thead th {
+        background: rgba(255,255,255,0.02);
+        color: var(--muted);
+        text-align: left;
+        padding: 13px 16px;
+        font-size: 0.76rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        border-bottom: 1px solid var(--border);
+      }
+
+      tbody td {
+        padding: 15px 16px;
+        border-bottom: 1px solid rgba(255,255,255,0.06);
+        vertical-align: middle;
+      }
+
+      tbody tr:hover { background: rgba(255,255,255,0.02); }
+
+      .icon-cell,
+      .checkbox-cell,
+      .actions-cell { width: 42px; color: var(--muted-soft); }
+
+      .drag-handle {
+        font-size: 1rem;
+        line-height: 1;
+        color: var(--muted-soft);
+      }
+
+      .checkbox {
+        width: 16px;
+        height: 16px;
+        border-radius: 5px;
+        border: 1px solid rgba(255,255,255,0.18);
+        display: inline-block;
+        background: transparent;
+      }
+
+      .domain-button {
+        display: inline-flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+
+      .domain-button strong { font-size: 0.95rem; }
+
+      .subdomain-note {
+        color: var(--muted-soft);
+        font-size: 0.76rem;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--panel-subtle);
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+
+      .badge.done { color: #bbf7d0; }
+      .badge.waiting { color: #fde68a; }
+
+      .numeric {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .footer-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+        padding: 16px 18px;
+        color: var(--muted);
+        font-size: 0.84rem;
+      }
+
+      .pager {
+        display: flex;
+        gap: 8px;
+      }
+
+      .ghost-btn {
+        border: 1px solid var(--border);
+        background: var(--panel-subtle);
+        color: var(--foreground);
+        border-radius: 10px;
+        padding: 8px 10px;
+        font-size: 0.84rem;
+      }
+
+      @media (max-width: 1100px) {
+        .dashboard-shell { grid-template-columns: 1fr; }
+        .sidebar {
+          position: static;
+          height: auto;
+          border-right: 0;
+          border-bottom: 1px solid var(--border);
+        }
+        .section-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      }
+
+      @media (max-width: 720px) {
+        .main-scroll,
+        .site-header { padding-left: 14px; padding-right: 14px; }
+        .section-cards { grid-template-columns: 1fr; }
+        .chart-labels { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="dashboard-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">LT</div>
+          <div class="brand-copy">
+            <strong>LinkTracker</strong>
+            <span>Dashboard 01 inspired</span>
+          </div>
+        </div>
+
+        <div>
+          <div class="sidebar-section-label">Platform</div>
+          <nav class="sidebar-nav">
+            <a class="nav-link active" href="{{ url_for('index') }}"><span>Overview</span><span class="nav-badge">1</span></a>
+            <a class="nav-link" href="#domains-table"><span>Domains table</span><span class="nav-badge">{{ domains|length }}</span></a>
+            <a class="nav-link" href="#chart-area"><span>Chart area</span><span class="nav-badge">6</span></a>
+            {% if current_user.is_authenticated %}
+              <a class="nav-link" href="{{ url_for('user_page') }}"><span>Account</span><span class="nav-badge">•</span></a>
+            {% else %}
+              <a class="nav-link" href="{{ url_for('login') }}"><span>Login</span><span class="nav-badge">→</span></a>
+            {% endif %}
+          </nav>
+        </div>
+
+        <div class="sidebar-card">
+          <h3>Release summary</h3>
+          <p>{{ release_date if release_date else 'Awaiting release date' }}</p>
+          <div class="sidebar-stat-list">
+            <div class="sidebar-stat">
+              <strong>{{ total_domains }}</strong>
+              <span class="footer-note">total domains tracked for the active list</span>
+            </div>
+            <div class="sidebar-stat">
+              <strong>{{ hidden_count }}</strong>
+              <span class="footer-note">rows hidden behind Premium right now</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="sidebar-card">
+          <h3>Access state</h3>
+          {% if current_user.is_authenticated and current_user.is_premium %}
+            <p>Premium is active, so the full table is available.</p>
+          {% elif current_user.is_authenticated %}
+            <p>You are signed in on the preview plan. Upgrade to unlock the full list.</p>
+          {% else %}
+            <p>Sign in or start checkout to unlock the premium dataset.</p>
+          {% endif %}
+        </div>
+
+        <div class="sidebar-spacer"></div>
+
+        {% if current_user.is_authenticated %}
+          <details class="user-menu">
+            <summary class="user-summary">
+              <div class="avatar">{{ current_user.email[0]|upper }}</div>
+              <div class="user-copy">
+                <strong>{{ current_user.email }}</strong>
+                <span>{{ 'Premium account' if current_user.is_premium else 'Free account' }}</span>
+              </div>
+            </summary>
+            <div class="menu-items">
+              <a class="menu-item" href="{{ url_for('user_page') }}">Account</a>
+              <a class="menu-item" href="{{ url_for('checkout') }}">Billing</a>
+              <a class="menu-item" href="{{ url_for('logout') }}">Log out</a>
+            </div>
+          </details>
+        {% else %}
+          <details class="user-menu" open>
+            <summary class="user-summary">
+              <div class="avatar">G</div>
+              <div class="user-copy">
+                <strong>Guest viewer</strong>
+                <span>Preview access</span>
+              </div>
+            </summary>
+            <div class="menu-items">
+              <a class="menu-item" href="{{ url_for('login') }}">Login</a>
+              <a class="menu-item" href="{{ url_for('checkout') }}">Start Premium</a>
+            </div>
+          </details>
+        {% endif %}
+      </aside>
+
+      <main class="content">
+        <header class="site-header">
+          <div>
+            <div class="header-overline">Overview · Sidebar inset</div>
+            <h1>Expired domains dashboard</h1>
+            <div class="header-subtitle">A server-rendered Flask version of the shadcn dashboard pattern with a sidebar, section cards, chart area, and an operations-style data table.</div>
+          </div>
+          <div class="header-actions">
+            <span class="pill">Release {{ release_date if release_date else 'pending' }}</span>
+            {% if current_user.is_authenticated and current_user.is_premium %}
+              <span class="pill">Premium active</span>
+            {% elif current_user.is_authenticated %}
+              <a class="pill primary" href="{{ url_for('checkout') }}">Upgrade</a>
+            {% else %}
+              <a class="pill" href="{{ url_for('login') }}">Login</a>
+              <a class="pill primary" href="{{ url_for('checkout') }}">Get started</a>
+            {% endif %}
+          </div>
+        </header>
+
+        <div class="main-scroll">
+          <div class="main-stack">
+            <section class="section-cards">
+              {% for stat in dashboard_stats %}
+                <article class="metric-card">
+                  <div class="metric-label">{{ stat.label }}</div>
+                  <div class="metric-value">{{ stat.value }}</div>
+                  <div class="metric-caption">{{ stat.detail }}</div>
+                </article>
+              {% endfor %}
+            </section>
+
+            <section class="chart-card" id="chart-area">
+              <div class="chart-head">
+                <div>
+                  <h3>Chart area interactive</h3>
+                  <p>Plotting the first six visible domains so the layout matches the chart panel from the reference dashboard.</p>
+                </div>
+                <div class="chart-actions">
+                  <span class="status-badge">Overview</span>
+                  <span class="status-badge">Top 6 domains</span>
+                </div>
+              </div>
+
+              <div class="chart-canvas">
+                {% if chart_points and chart_has_metrics %}
+                  <svg viewBox="0 0 400 190" width="100%" height="220" role="img" aria-label="Moz metrics chart">
+                    <line class="chart-grid" x1="24" y1="32" x2="384" y2="32"></line>
+                    <line class="chart-grid" x1="24" y1="86" x2="384" y2="86"></line>
+                    <line class="chart-grid" x1="24" y1="140" x2="384" y2="140"></line>
+                    <polyline class="line-links" points="{% for point in chart_points %}{{ point.x }},{{ point.links_y }} {% endfor %}"></polyline>
+                    <polyline class="line-da" points="{% for point in chart_points %}{{ point.x }},{{ point.da_y }} {% endfor %}"></polyline>
+                    {% for point in chart_points %}
+                      <circle class="chart-dot-links" cx="{{ point.x }}" cy="{{ point.links_y }}" r="4"></circle>
+                      <circle class="chart-dot-da" cx="{{ point.x }}" cy="{{ point.da_y }}" r="4"></circle>
+                    {% endfor %}
+                  </svg>
+                  <div class="chart-legend">
+                    <span><span class="legend-dot" style="background:#f8fafc"></span> Domain Authority</span>
+                    <span><span class="legend-dot" style="background:#60a5fa"></span> Linking Root Domains</span>
+                  </div>
+                  <div class="chart-labels">
+                    {% for point in chart_points %}
+                      <span title="{{ point.label }}">{{ point.label }}</span>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <p class="table-note">Moz metrics have not been populated yet, so the chart area is waiting for DA/linking-domain data.</p>
+                {% endif %}
+              </div>
+            </section>
+
+            <section class="table-card" id="domains-table">
+              <div class="table-toolbar">
+                <div>
+                  <h3>Data table</h3>
+                  <p>Structured to resemble the block you shared: toolbar tabs, controls, and a dense operations table.</p>
+                </div>
+                <div class="toolbar-actions">
+                  <div class="tabs">
+                    <span class="tab active">Outline</span>
+                    <span class="tab">Past performance</span>
+                    <span class="tab">Key personnel</span>
+                    <span class="tab">Focus docs</span>
+                  </div>
+                  <span class="pill">Columns</span>
+                  <span class="pill">Add section</span>
+                </div>
+              </div>
+
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th></th>
+                      <th></th>
+                      <th>Domain</th>
+                      <th>Type</th>
+                      <th>Status</th>
+                      <th class="numeric">DA</th>
+                      <th class="numeric">Links</th>
+                      <th>Release</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% if domains %}
+                      {% for domain in domains %}
+                        {% set has_metrics = domain.da is not none or domain.linking_root_domains is not none %}
+                        {% set resolved_release = domain.release_date if domain.release_date is defined and domain.release_date is not none else release_date if release_date else 'N/A' %}
+                        <tr>
+                          <td class="icon-cell"><span class="drag-handle">⋮⋮</span></td>
+                          <td class="checkbox-cell"><span class="checkbox"></span></td>
+                          <td>
+                            <span class="domain-button">
+                              <strong>{{ domain.domain_name }}</strong>
+                              <span class="subdomain-note">{{ 'Visible in full premium list' if current_user.is_authenticated and current_user.is_premium else 'Preview row' }}</span>
+                            </span>
+                          </td>
+                          <td><span class="badge">{{ '.se' if domain.domain_name.endswith('.se') else '.nu' }}</span></td>
+                          <td>
+                            <span class="badge {% if has_metrics %}done{% else %}waiting{% endif %}">
+                              {{ 'Done' if has_metrics else 'In Process' }}
+                            </span>
+                          </td>
+                          <td class="numeric">{{ domain.da if domain.da is not none else '—' }}</td>
+                          <td class="numeric">{{ domain.linking_root_domains if domain.linking_root_domains is not none else '—' }}</td>
+                          <td>{{ resolved_release }}</td>
+                          <td class="actions-cell">⋯</td>
+                        </tr>
+                      {% endfor %}
+                    {% else %}
+                      <tr>
+                        <td colspan="9" style="padding: 28px 16px; text-align:center; color: var(--muted);">No domains are available right now.</td>
+                      </tr>
+                    {% endif %}
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="footer-row">
+                <div>{{ domains|length }} of {{ total_domains }} row(s) loaded in the current view.</div>
+                <div class="pager">
+                  <span class="ghost-btn">Rows {{ domains|length }}</span>
+                  <span class="ghost-btn">Page 1</span>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>
