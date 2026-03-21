@@ -5,113 +5,150 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Expired Domains with Moz Metrics</title>
     <style>
+      :root {
+        --background: #f8fafc;
+        --foreground: #0f172a;
+        --card: #ffffff;
+        --muted: #64748b;
+        --border: #e2e8f0;
+        --primary: #0f172a;
+        --primary-foreground: #f8fafc;
+        --secondary: #f1f5f9;
+        --secondary-foreground: #0f172a;
+        --accent: #eef2ff;
+        --accent-foreground: #312e81;
+        --ring: rgba(15, 23, 42, 0.08);
+      }
+      * { box-sizing: border-box; }
       body {
-        font-family: Arial, sans-serif;
-        background: #f4f7fb;
-        color: #1f2937;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+        color: var(--foreground);
         margin: 0;
-        padding: 24px;
+        padding: 32px 20px 64px;
       }
       .container {
-        max-width: 1120px;
+        max-width: 1240px;
         margin: 0 auto;
-        background: #ffffff;
-        border-radius: 12px;
-        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
-        padding: 24px;
+        background: rgba(255, 255, 255, 0.82);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(226, 232, 240, 0.9);
+        border-radius: 24px;
+        box-shadow: 0 24px 80px rgba(15, 23, 42, 0.08);
+        padding: 28px;
       }
       .topbar {
         display: flex;
         justify-content: space-between;
-        align-items: center;
+        align-items: flex-start;
         gap: 16px;
         flex-wrap: wrap;
+        padding-bottom: 20px;
+        border-bottom: 1px solid var(--border);
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 2rem;
+        letter-spacing: -0.04em;
+      }
+      p {
+        margin: 6px 0;
+        color: var(--muted);
       }
       .actions {
         display: flex;
         gap: 12px;
         flex-wrap: wrap;
+        align-items: center;
       }
       .btn {
-        display: inline-block;
-        padding: 10px 14px;
-        border-radius: 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 10px 16px;
+        border-radius: 999px;
         text-decoration: none;
-        border: 0;
+        border: 1px solid transparent;
         cursor: pointer;
+        font-weight: 600;
+        transition: all 0.15s ease;
       }
+      .btn:hover { transform: translateY(-1px); }
       .btn-dark {
-        background: #111827;
-        color: #ffffff;
+        background: var(--primary);
+        color: var(--primary-foreground);
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
       }
       .btn-outline {
-        background: #ffffff;
-        color: #111827;
-        border: 1px solid #d1d5db;
-      }
-      .btn-green {
-        background: #059669;
-        color: #ffffff;
+        background: rgba(255, 255, 255, 0.72);
+        color: var(--secondary-foreground);
+        border-color: var(--border);
       }
       .stats {
         display: flex;
         gap: 16px;
         flex-wrap: wrap;
-        margin-top: 18px;
+        margin-top: 22px;
       }
       .stat {
-        background: #f9fafb;
-        padding: 16px;
-        border-radius: 10px;
-        min-width: 180px;
-        border: 1px solid #e5e7eb;
+        background: var(--card);
+        padding: 18px;
+        border-radius: 18px;
+        min-width: 200px;
+        border: 1px solid var(--border);
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
       }
-      .premium-box {
-        margin-top: 18px;
-        padding: 16px;
-        border-radius: 10px;
-        background: #eff6ff;
-        border: 1px solid #bfdbfe;
+      .stat strong {
+        display: block;
+        color: var(--muted);
+        font-size: 0.875rem;
+        margin-bottom: 6px;
+      }
+      .table-card {
+        margin-top: 22px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        background: var(--card);
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
       }
       table {
         width: 100%;
         border-collapse: collapse;
-        margin-top: 20px;
       }
       th, td {
         text-align: left;
-        padding: 12px 14px;
-        border-bottom: 1px solid #e5e7eb;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border);
       }
       th {
-        background: #111827;
-        color: #ffffff;
+        background: #f8fafc;
+        color: var(--foreground);
+        font-size: 0.875rem;
       }
-      tr:nth-child(even) {
-        background: #f9fafb;
-      }
+      tr:nth-child(even) { background: #fcfcfd; }
       .tooltip {
         position: relative;
         display: inline-block;
         cursor: help;
-        border-bottom: 1px dotted rgba(255, 255, 255, 0.7);
+        border-bottom: 1px dotted rgba(15, 23, 42, 0.25);
       }
       .tooltip .tooltiptext {
         visibility: hidden;
         width: 280px;
-        background: #1f2937;
-        color: #ffffff;
+        background: var(--primary);
+        color: var(--primary-foreground);
         text-align: left;
-        border-radius: 8px;
-        padding: 10px 12px;
+        border-radius: 14px;
+        padding: 12px 14px;
         position: absolute;
         z-index: 1;
         bottom: 125%;
         left: 50%;
         margin-left: -140px;
-        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);
-        font-weight: normal;
-        line-height: 1.4;
+        box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+        font-weight: 500;
+        line-height: 1.45;
         opacity: 0;
         transition: opacity 0.2s ease-in-out;
       }
@@ -119,9 +156,18 @@
         visibility: visible;
         opacity: 1;
       }
+      .premium-box {
+        margin-top: 22px;
+        padding: 18px;
+        border-radius: 18px;
+        background: var(--accent);
+        border: 1px solid #c7d2fe;
+        color: var(--accent-foreground);
+      }
+      .premium-box strong { color: var(--accent-foreground); }
       .empty {
         margin-top: 16px;
-        color: #6b7280;
+        color: var(--muted);
       }
     </style>
   </head>
@@ -129,33 +175,25 @@
     <div class="container">
       <div class="topbar">
         <div>
-    <h1>High-Authority Expired Domains</h1>
-    <p>Premium domain opportunities curated daily, ranked by SEO strength and backlink authority.</p>
-    
-    {% if release_date %}
-        <p class="meta-tag"><strong>Batch Date:</strong> {{ release_date }}</p>
-    {% endif %}
-
-    {% if using_live_fallback %}
-        <p class="status-alert"><strong>Analyzing live data...</strong> Your results will be updated with full metrics shortly.</p>
-    {% endif %}
-</div>
-
-<div class="actions">
-    {% if current_user.is_authenticated %}
-        <span class="user-badge">
-            {{ current_user.email }} 
-            {% if current_user.is_premium %}
-                <span class="premium-label">PRO</span>
-            {% endif %}
-        </span>
-        <a class="btn btn-outline" href="{{ url_for('user_page') }}">Dashboard</a>
-        <a class="btn btn-outline" href="{{ url_for('logout') }}">Sign Out</a>
-    {% else %}
-        <a class="btn btn-outline" href="{{ url_for('login') }}">Sign In</a>
-        <a class="btn btn-dark" href="{{ url_for('register') }}">Get Started</a>
-    {% endif %}
-</div>
+          <h1>Expired Domains with Moz Metrics</h1>
+          <p>Daily domains are fetched from the database and sorted by highest Domain Authority first.</p>
+          {% if release_date %}
+            <p><strong>Release date:</strong> {{ release_date }}</p>
+          {% endif %}
+          {% if using_live_fallback %}
+            <p><strong>Showing a live fallback list because the database is currently empty.</strong></p>
+          {% endif %}
+        </div>
+        <div class="actions">
+          {% if current_user.is_authenticated %}
+            <span>{{ current_user.email }}{% if current_user.is_premium %} · Premium{% endif %}</span>
+            <a class="btn btn-outline" href="{{ url_for('user_page') }}">User Page</a>
+            <a class="btn btn-outline" href="{{ url_for('logout') }}">Logout</a>
+          {% else %}
+            <a class="btn btn-outline" href="{{ url_for('login') }}">Login</a>
+            <a class="btn btn-dark" href="{{ url_for('register') }}">Register</a>
+          {% endif %}
+        </div>
       </div>
 
       <div class="stats">
@@ -165,7 +203,7 @@
       </div>
 
       {% if domains %}
-        <table>
+        <div class="table-card"><table>
           <thead>
             <tr>
               <th>Domain</th>
@@ -190,7 +228,7 @@
               </tr>
             {% endfor %}
           </tbody>
-        </table>
+        </table></div>
       {% else %}
         <p class="empty">No domains are available right now.</p>
       {% endif %}

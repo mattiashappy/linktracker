@@ -260,11 +260,11 @@ USER_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>User Page</title>
     <style>
-      body { font-family: Arial, sans-serif; background: #f4f7fb; padding: 32px; color: #1f2937; }
-      .card { max-width: 720px; margin: 0 auto; background: #fff; padding: 24px; border-radius: 12px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08); }
-      .row { margin-bottom: 14px; }
-      .label { font-weight: bold; }
-      a.button { display: inline-block; background: #111827; color: #fff; padding: 12px 16px; border-radius: 8px; text-decoration: none; margin-right: 12px; }
+      body { font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%); padding: 32px; color: #0f172a; }
+      .card { max-width: 720px; margin: 0 auto; background: rgba(255,255,255,0.92); border: 1px solid #e2e8f0; padding: 28px; border-radius: 24px; box-shadow: 0 24px 80px rgba(15, 23, 42, 0.08); }
+      .row { margin-bottom: 14px; color: #475569; }
+      .label { font-weight: 700; color: #0f172a; }
+      a.button { display: inline-block; background: #0f172a; color: #fff; padding: 12px 16px; border-radius: 999px; text-decoration: none; margin-right: 12px; }
     </style>
   </head>
   <body>
@@ -292,10 +292,10 @@ ADMIN_LOGIN_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Admin Login</title>
     <style>
-      body { font-family: Arial, sans-serif; background: #f4f7fb; padding: 32px; color: #1f2937; }
-      .card { max-width: 420px; margin: 0 auto; background: #fff; padding: 24px; border-radius: 12px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08); }
-      input { width: 100%; padding: 12px; margin: 8px 0 14px; border: 1px solid #d1d5db; border-radius: 8px; box-sizing: border-box; }
-      button, a.button { display: inline-block; background: #111827; color: #fff; padding: 12px 16px; border-radius: 8px; text-decoration: none; border: 0; cursor: pointer; }
+      body { font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%); padding: 32px; color: #0f172a; }
+      .card { max-width: 420px; margin: 0 auto; background: rgba(255,255,255,0.92); border: 1px solid #e2e8f0; padding: 28px; border-radius: 24px; box-shadow: 0 24px 80px rgba(15, 23, 42, 0.08); }
+      input { width: 100%; padding: 12px; margin: 8px 0 14px; border: 1px solid #d1d5db; border-radius: 14px; box-sizing: border-box; }
+      button, a.button { display: inline-block; background: #0f172a; color: #fff; padding: 12px 16px; border-radius: 999px; text-decoration: none; border: 0; cursor: pointer; }
       .error { margin-bottom: 14px; color: #b91c1c; }
     </style>
   </head>
@@ -324,14 +324,14 @@ ADMIN_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Admin Page</title>
     <style>
-      body { font-family: Arial, sans-serif; background: #f4f7fb; padding: 32px; color: #1f2937; }
-      .card { max-width: 1100px; margin: 0 auto; background: #fff; padding: 24px; border-radius: 12px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08); }
+      body { font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%); padding: 32px; color: #0f172a; }
+      .card { max-width: 1100px; margin: 0 auto; background: rgba(255,255,255,0.92); border: 1px solid #e2e8f0; padding: 28px; border-radius: 24px; box-shadow: 0 24px 80px rgba(15, 23, 42, 0.08); }
       .stats { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
-      .stat { background: #f9fafb; padding: 16px; border-radius: 10px; min-width: 180px; }
-      table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-      th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #e5e7eb; }
-      th { background: #111827; color: #fff; }
-      a.button { display: inline-block; background: #111827; color: #fff; padding: 12px 16px; border-radius: 8px; text-decoration: none; margin-right: 12px; }
+      .stat { background: #f8fafc; border: 1px solid #e2e8f0; padding: 16px; border-radius: 18px; min-width: 180px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 16px; overflow: hidden; }
+      th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid #e5e7eb; }
+      th { background: #f8fafc; color: #0f172a; }
+      a.button { display: inline-block; background: #0f172a; color: #fff; padding: 12px 16px; border-radius: 999px; text-decoration: none; margin-right: 12px; }
     </style>
   </head>
   <body>
@@ -391,10 +391,10 @@ AUTH_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ title }}</title>
     <style>
-      body { font-family: Arial, sans-serif; background: #f4f7fb; padding: 32px; color: #1f2937; }
-      .card { max-width: 420px; margin: 0 auto; background: #fff; padding: 24px; border-radius: 12px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08); }
-      input { width: 100%; padding: 12px; margin: 8px 0 14px; border: 1px solid #d1d5db; border-radius: 8px; box-sizing: border-box; }
-      button, a.button { display: inline-block; background: #111827; color: #fff; padding: 12px 16px; border-radius: 8px; text-decoration: none; border: 0; cursor: pointer; }
+      body { font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%); padding: 32px; color: #0f172a; }
+      .card { max-width: 420px; margin: 0 auto; background: rgba(255,255,255,0.92); border: 1px solid #e2e8f0; padding: 28px; border-radius: 24px; box-shadow: 0 24px 80px rgba(15, 23, 42, 0.08); }
+      input { width: 100%; padding: 12px; margin: 8px 0 14px; border: 1px solid #d1d5db; border-radius: 14px; box-sizing: border-box; }
+      button, a.button { display: inline-block; background: #0f172a; color: #fff; padding: 12px 16px; border-radius: 999px; text-decoration: none; border: 0; cursor: pointer; }
       .error { margin-bottom: 14px; color: #b91c1c; }
       .meta { margin-top: 16px; }
     </style>
