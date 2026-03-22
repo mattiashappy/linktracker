@@ -45,12 +45,14 @@
       }
 
       * { box-sizing: border-box; }
+
       body {
         margin: 0;
         min-height: 100vh;
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         transition: background-color 0.3s ease, color 0.3s ease;
       }
+
       a { color: inherit; text-decoration: none; }
       button, input, select { font: inherit; }
 
@@ -58,69 +60,20 @@
         background: hsl(var(--background));
         color: hsl(var(--foreground));
       }
+
       .bg-card {
         background: hsl(var(--card));
         transition: background-color 0.3s ease, color 0.3s ease;
       }
+
       .text-card-foreground { color: hsl(var(--card-foreground)); }
       .border-border { border-color: hsl(var(--border)); }
       .text-muted-foreground { color: hsl(var(--muted-foreground)); }
-      .hover\:bg-accent:hover { background: hsl(var(--accent)); }
-      .hover\:text-accent-foreground:hover { color: hsl(var(--accent-foreground)); }
       .rounded-xl { border-radius: 0.75rem; }
       .rounded-md { border-radius: 0.375rem; }
 
       .app-shell {
         min-height: 100vh;
-        display: grid;
-        grid-template-columns: 76px minmax(0, 1fr);
-      }
-
-      .sidebar {
-        border-right: 1px solid hsl(var(--border));
-        padding: 12px 10px;
-        display: flex;
-        flex-direction: column;
-        gap: 14px;
-      }
-
-      body.sidebar-collapsed .app-shell {
-        grid-template-columns: 60px minmax(0, 1fr);
-      }
-
-      .sidebar-top,
-      .sidebar-nav,
-      .sidebar-bottom {
-        display: grid;
-        gap: 8px;
-      }
-
-      .sidebar-button,
-      .icon-button,
-      .user-trigger,
-      .page-link {
-        width: 100%;
-        min-height: 40px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        border: 0;
-        background: transparent;
-        color: hsl(var(--muted-foreground));
-        cursor: pointer;
-      }
-
-      .sidebar-button {
-        border-radius: 0.75rem;
-      }
-
-      .sidebar-button.active {
-        background: hsl(var(--accent));
-        color: hsl(var(--accent-foreground));
-      }
-
-      .content {
-        min-width: 0;
         display: flex;
         flex-direction: column;
       }
@@ -129,26 +82,52 @@
         position: sticky;
         top: 0;
         z-index: 10;
+        border-bottom: 1px solid hsl(var(--border));
+        background: hsl(var(--background));
+      }
+
+      .header-inner,
+      .container {
+        max-width: 1200px;
+        width: 100%;
+        margin: 0 auto;
+      }
+
+      .header-inner {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 16px;
         padding: 14px 18px;
-        border-bottom: 1px solid hsl(var(--border));
-        background: hsl(var(--background));
       }
 
       .header-left {
-        display: flex;
-        align-items: center;
-        gap: 12px;
         min-width: 0;
       }
 
       .header-right {
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 16px;
+      }
+
+      .header-link {
+        color: hsl(var(--muted-foreground));
+        font-weight: 500;
+        text-decoration: none;
+      }
+
+      .signup-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 38px;
+        padding: 8px 16px;
+        border-radius: 6px;
+        background: hsl(var(--primary));
+        color: hsl(var(--primary-foreground));
+        font-weight: 500;
+        border: 0;
       }
 
       .icon-button,
@@ -164,11 +143,19 @@
       .icon-button,
       .user-trigger {
         width: 40px;
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
         padding: 0;
+        cursor: pointer;
       }
 
       .page {
         padding: 18px;
+      }
+
+      .container {
         display: grid;
         gap: 18px;
       }
@@ -347,6 +334,10 @@
 
       .page-link {
         width: 38px;
+        min-height: 38px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
         padding: 0;
       }
 
@@ -410,14 +401,21 @@
       }
 
       @media (max-width: 720px) {
-        .page,
-        .header {
+        .header-inner,
+        .page {
           padding-left: 12px;
           padding-right: 12px;
         }
+
+        .header-inner,
+        .header-right {
+          flex-wrap: wrap;
+        }
+
         .search-input {
           min-width: 100%;
         }
+
         .table-scroll {
           max-height: none;
         }
@@ -426,79 +424,66 @@
   </head>
   <body class="bg-background">
     <div class="app-shell">
-      <aside class="sidebar bg-background">
-        <div class="sidebar-top">
-          <button class="sidebar-button hover:bg-accent hover:text-accent-foreground" type="button" aria-label="Home">◉</button>
-        </div>
-
-        <nav class="sidebar-nav">
-          <a class="sidebar-button active hover:bg-accent hover:text-accent-foreground" href="{{ url_for('index', q=search_query, page=1, page_size=page_size) }}" aria-label="Dashboard">◫</a>
-          <a class="sidebar-button hover:bg-accent hover:text-accent-foreground" href="#opportunities" aria-label="Table">▤</a>
-          {% if current_user.is_authenticated %}
-            <a class="sidebar-button hover:bg-accent hover:text-accent-foreground" href="{{ url_for('user_page') }}" aria-label="Account">◌</a>
-          {% else %}
-            <a class="sidebar-button hover:bg-accent hover:text-accent-foreground" href="{{ url_for('login') }}" aria-label="Login">◎</a>
-          {% endif %}
-        </nav>
-
-        <div class="sidebar-bottom">
-          <details class="user-menu">
-            <summary class="user-trigger rounded-md" aria-label="User menu">{{ current_user.email[0]|upper if current_user.is_authenticated else 'G' }}</summary>
-            <div class="dropdown text-card-foreground">
-              {% if current_user.is_authenticated %}
-                <a href="{{ url_for('user_page') }}">{{ current_user.email }}</a>
-                <a href="{{ url_for('logout') }}">Logout</a>
-              {% else %}
-                <a href="{{ url_for('login') }}">Login</a>
-                <a href="{{ url_for('checkout') }}">Upgrade</a>
-              {% endif %}
-            </div>
-          </details>
-        </div>
-      </aside>
-
-      <main class="content">
-        <header class="header bg-background">
+      <header class="header bg-background">
+        <div class="header-inner">
           <div class="header-left">
-            <button class="icon-button rounded-md" type="button" id="sidebar-toggle" aria-label="Toggle sidebar">☰</button>
             <div class="page-head">
               <h1>Domain Intelligence</h1>
               <p class="text-muted-foreground">Daily curated list of expiring domains, ranked by SEO authority.</p>
             </div>
           </div>
           <div class="header-right">
-            <button class="icon-button rounded-md" type="button" id="theme-toggle" aria-label="Toggle theme">
-              <svg class="theme-icon sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="4"></circle>
-                <path d="M12 2v2.5"></path>
-                <path d="M12 19.5V22"></path>
-                <path d="M4.93 4.93l1.77 1.77"></path>
-                <path d="M17.3 17.3l1.77 1.77"></path>
-                <path d="M2 12h2.5"></path>
-                <path d="M19.5 12H22"></path>
-                <path d="M4.93 19.07l1.77-1.77"></path>
-                <path d="M17.3 6.7l1.77-1.77"></path>
-              </svg>
-              <svg class="theme-icon moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"></path>
-              </svg>
-            </button>
-            <details class="user-menu">
-              <summary class="user-trigger rounded-md" aria-label="Profile menu">{{ current_user.email[0]|upper if current_user.is_authenticated else 'G' }}</summary>
-              <div class="dropdown text-card-foreground">
-                {% if current_user.is_authenticated %}
+            {% if current_user.is_authenticated %}
+              <a class="header-link" href="{{ url_for('user_page') }}">My Account</a>
+              <button class="icon-button rounded-md" type="button" id="theme-toggle" aria-label="Toggle theme">
+                <svg class="theme-icon sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="4"></circle>
+                  <path d="M12 2v2.5"></path>
+                  <path d="M12 19.5V22"></path>
+                  <path d="M4.93 4.93l1.77 1.77"></path>
+                  <path d="M17.3 17.3l1.77 1.77"></path>
+                  <path d="M2 12h2.5"></path>
+                  <path d="M19.5 12H22"></path>
+                  <path d="M4.93 19.07l1.77-1.77"></path>
+                  <path d="M17.3 6.7l1.77-1.77"></path>
+                </svg>
+                <svg class="theme-icon moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"></path>
+                </svg>
+              </button>
+              <details class="user-menu">
+                <summary class="user-trigger rounded-md" aria-label="Profile menu">{{ current_user.email[0]|upper }}</summary>
+                <div class="dropdown text-card-foreground">
                   <a href="{{ url_for('user_page') }}">{{ current_user.email }}</a>
                   <a href="{{ url_for('logout') }}">Logout</a>
-                {% else %}
-                  <a href="{{ url_for('login') }}">Login</a>
-                  <a href="{{ url_for('checkout') }}">Upgrade</a>
-                {% endif %}
-              </div>
-            </details>
+                </div>
+              </details>
+            {% else %}
+              <a class="header-link" href="{{ url_for('login') }}">Login</a>
+              <a class="signup-button" href="{{ url_for('checkout') }}">Sign Up</a>
+              <button class="icon-button rounded-md" type="button" id="theme-toggle" aria-label="Toggle theme">
+                <svg class="theme-icon sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="4"></circle>
+                  <path d="M12 2v2.5"></path>
+                  <path d="M12 19.5V22"></path>
+                  <path d="M4.93 4.93l1.77 1.77"></path>
+                  <path d="M17.3 17.3l1.77 1.77"></path>
+                  <path d="M2 12h2.5"></path>
+                  <path d="M19.5 12H22"></path>
+                  <path d="M4.93 19.07l1.77-1.77"></path>
+                  <path d="M17.3 6.7l1.77-1.77"></path>
+                </svg>
+                <svg class="theme-icon moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"></path>
+                </svg>
+              </button>
+            {% endif %}
           </div>
-        </header>
+        </div>
+      </header>
 
-        <div class="page">
+      <main class="page">
+        <div class="container">
           <section class="metrics-grid">
             {% for stat in dashboard_stats %}
               <article class="metric-card bg-card text-card-foreground border-border rounded-xl">
@@ -581,27 +566,13 @@
     <script>
       (function () {
         const root = document.documentElement
-        const key = 'linktracker-sidebar-collapsed'
         const themeKey = 'theme'
-        const button = document.getElementById('sidebar-toggle')
         const themeToggle = document.getElementById('theme-toggle')
-        const saved = window.localStorage.getItem(key)
         const savedTheme = window.localStorage.getItem(themeKey)
         const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
 
         if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
           root.classList.add('dark')
-        }
-
-        if (saved === 'true') {
-          document.body.classList.add('sidebar-collapsed')
-        }
-
-        if (button) {
-          button.addEventListener('click', function () {
-            document.body.classList.toggle('sidebar-collapsed')
-            window.localStorage.setItem(key, document.body.classList.contains('sidebar-collapsed'))
-          })
         }
 
         if (themeToggle) {
