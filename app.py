@@ -608,15 +608,15 @@ USER_TEMPLATE = """
               <div class="card-meta text-muted-foreground">Current access level</div>
             </article>
             <article class="metric-card bg-card text-card-foreground border-border rounded-xl">
-              <div class="card-title text-muted-foreground">Stripe Customer</div>
-              <div class="card-value">{{ user.stripe_customer_id or 'Not connected' }}</div>
-              <div class="card-meta text-muted-foreground">Billing profile reference</div>
+              <div class="card-title text-muted-foreground">Billing</div>
+              <div class="card-value">{{ 'Manage in Stripe' if user.stripe_customer_id else 'Not connected' }}</div>
+              <div class="card-meta text-muted-foreground">Invoices and cancellation</div>
             </article>
           </section>
 
           <section class="account-panel bg-card text-card-foreground border-border rounded-xl">
             <h2>Account Details</h2>
-            <p>Manage your current access and billing connection from the same dashboard style as the main domain view.</p>
+            <p>Manage your current access and billing settings from the same dashboard style as the main domain view.</p>
             <div class="details-grid">
               <div class="detail-card">
                 <div class="detail-label">Email</div>
@@ -627,11 +627,14 @@ USER_TEMPLATE = """
                 <div class="detail-value"><span class="badge">{{ 'Premium' if user.is_premium else 'Free' }}</span></div>
               </div>
               <div class="detail-card">
-                <div class="detail-label">Stripe Customer</div>
-                <div class="detail-value">{{ user.stripe_customer_id or 'Not connected yet' }}</div>
+                <div class="detail-label">Billing</div>
+                <div class="detail-value">{{ 'Invoices and cancellation' if user.stripe_customer_id else 'Available after checkout' }}</div>
               </div>
             </div>
             <div class="actions">
+              {% if user.stripe_customer_id %}
+                <a class="action-button rounded-md" href="{{ url_for('billing_portal') }}">Manage Billing</a>
+              {% endif %}
               {% if not user.is_premium %}
                 <a class="action-button primary" href="{{ url_for('checkout') }}">Upgrade to Premium</a>
               {% endif %}
@@ -1064,6 +1067,26 @@ def logout():
 @login_required
 def user_page():
     return render_template_string(USER_TEMPLATE, user=current_user)
+
+
+@app.route("/billing")
+@login_required
+def billing_portal():
+    if not current_user.stripe_customer_id:
+        return redirect(url_for("user_page"))
+
+    if not get_stripe_secret_key():
+        abort(500, "Stripe is not configured. Set STRIPE_SECRET_KEY/Secret_key_test.")
+
+    try:
+        portal_session = stripe.billing_portal.Session.create(
+            customer=current_user.stripe_customer_id,
+            return_url=url_for("user_page", _external=True),
+        )
+    except stripe.error.StripeError as exc:
+        return abort(500, f"Stripe billing portal error: {str(exc)}")
+
+    return redirect(portal_session.url, code=303)
 
 
 @app.route("/admin/login", methods=["GET", "POST"])
