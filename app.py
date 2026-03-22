@@ -288,148 +288,380 @@ USER_TEMPLATE = """
     <title>User Page</title>
     <style>
       :root {
-        --bg: #09090b;
-        --card: rgba(2, 6, 23, 0.78);
-        --border: rgba(148, 163, 184, 0.16);
-        --foreground: #f8fafc;
-        --muted: #94a3b8;
+        --background: 0 0% 100%;
+        --foreground: 222.2 84% 4.9%;
+        --card: 0 0% 100%;
+        --card-foreground: 222.2 84% 4.9%;
+        --primary: 222.2 47.4% 11.2%;
+        --primary-foreground: 210 40% 98%;
+        --secondary: 210 40% 96.1%;
+        --secondary-foreground: 222.2 47.4% 11.2%;
+        --muted: 210 40% 96.1%;
+        --muted-foreground: 215.4 16.3% 46.9%;
+        --accent: 210 40% 96.1%;
+        --accent-foreground: 222.2 47.4% 11.2%;
+        --border: 214.3 31.8% 91.4%;
       }
+
+      .dark {
+        --background: 222.2 84% 4.9%;
+        --foreground: 210 40% 98%;
+        --card: 222.2 47.4% 11.2%;
+        --card-foreground: 210 40% 98%;
+        --primary: 210 40% 98%;
+        --primary-foreground: 222.2 47.4% 11.2%;
+        --secondary: 217.2 32.6% 17.5%;
+        --secondary-foreground: 210 40% 98%;
+        --muted: 217.2 32.6% 17.5%;
+        --muted-foreground: 215 20.2% 65.1%;
+        --accent: 217.2 32.6% 17.5%;
+        --accent-foreground: 210 40% 98%;
+        --border: 217.2 32.6% 17.5%;
+      }
+
       * { box-sizing: border-box; }
       body {
         margin: 0;
         min-height: 100vh;
-        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-        background:
-          radial-gradient(circle at top left, rgba(99, 102, 241, 0.25), transparent 26%),
-          linear-gradient(180deg, #020617 0%, #09090b 100%);
-        padding: 24px 16px 48px;
-        color: var(--foreground);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        transition: background-color 0.3s ease, color 0.3s ease;
       }
-      .card {
-        max-width: 880px;
+      a { color: inherit; text-decoration: none; }
+      button { font: inherit; }
+
+      .bg-background {
+        background: hsl(var(--background));
+        color: hsl(var(--foreground));
+      }
+      .bg-card {
+        background: hsl(var(--card));
+        transition: background-color 0.3s ease, color 0.3s ease;
+      }
+      .text-card-foreground { color: hsl(var(--card-foreground)); }
+      .text-muted-foreground { color: hsl(var(--muted-foreground)); }
+      .border-border { border-color: hsl(var(--border)); }
+      .rounded-xl { border-radius: 0.75rem; }
+      .rounded-md { border-radius: 0.375rem; }
+
+      .app-shell {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      .header {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        border-bottom: 1px solid hsl(var(--border));
+        background: hsl(var(--background));
+      }
+      .header-inner,
+      .container {
+        max-width: 1200px;
+        width: 100%;
         margin: 0 auto;
-        background: var(--card);
-        border: 1px solid var(--border);
-        padding: 28px;
-        border-radius: 28px;
-        box-shadow: 0 24px 80px rgba(2, 6, 23, 0.4);
-        backdrop-filter: blur(18px);
       }
-      .eyebrow {
+      .header-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 14px 18px;
+      }
+      .header-left { min-width: 0; }
+      .header-right {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      .header-link {
+        color: hsl(var(--muted-foreground));
+        font-weight: 500;
+        text-decoration: none;
+      }
+      .icon-button,
+      .user-trigger,
+      .action-button {
+        border: 1px solid hsl(var(--border));
+        background: hsl(var(--card));
+        color: hsl(var(--card-foreground));
+      }
+      .icon-button,
+      .user-trigger {
+        width: 40px;
+        min-height: 40px;
         display: inline-flex;
         align-items: center;
-        gap: 8px;
-        border-radius: 999px;
-        border: 1px solid var(--border);
-        padding: 7px 11px;
-        color: var(--muted);
-        background: rgba(255,255,255,0.04);
-        font-size: 0.82rem;
+        justify-content: center;
+        padding: 0;
+        cursor: pointer;
       }
-      h1 {
-        margin: 14px 0 8px;
-        font-size: clamp(2rem, 4vw, 3rem);
-        letter-spacing: -0.05em;
+      .action-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 38px;
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-weight: 500;
       }
-      .subtext {
-        margin: 0 0 22px;
-        color: var(--muted);
-        line-height: 1.7;
+      .action-button.primary {
+        background: hsl(var(--primary));
+        color: hsl(var(--primary-foreground));
+        border-color: transparent;
       }
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 16px;
-        margin-top: 18px;
-      }
-      .info-card {
-        border-radius: 22px;
-        border: 1px solid var(--border);
-        background: rgba(255,255,255,0.04);
+      .page {
         padding: 18px;
       }
-      .label {
-        display: block;
-        margin-bottom: 8px;
-        color: var(--muted);
+      .container {
+        display: grid;
+        gap: 18px;
+      }
+      .page-head h1 {
+        margin: 0;
+        font-size: 1.5rem;
+        line-height: 1.1;
+        letter-spacing: -0.03em;
+      }
+      .page-head p,
+      .card-meta,
+      .account-panel p {
+        color: hsl(var(--muted-foreground));
+      }
+      .page-head p {
+        margin: 6px 0 0;
+        font-size: 0.9rem;
+      }
+      .metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+      }
+      .metric-card,
+      .account-panel {
+        border: 1px solid hsl(var(--border));
+        padding: 16px;
+      }
+      .card-title {
         font-size: 0.82rem;
+        margin-bottom: 8px;
+      }
+      .card-value {
+        font-size: 1.7rem;
+        font-weight: 700;
+        letter-spacing: -0.04em;
+        word-break: break-word;
+      }
+      .card-meta {
+        margin-top: 8px;
+        font-size: 0.8rem;
+      }
+      .account-panel h2 {
+        margin: 0 0 6px;
+        font-size: 1rem;
+      }
+      .account-panel p {
+        margin: 0 0 18px;
+        font-size: 0.88rem;
+      }
+      .details-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+      }
+      .detail-card {
+        border: 1px solid hsl(var(--border));
+        border-radius: 0.75rem;
+        padding: 14px;
+      }
+      .detail-label {
+        font-size: 0.75rem;
+        color: hsl(var(--muted-foreground));
         text-transform: uppercase;
         letter-spacing: 0.08em;
+        margin-bottom: 8px;
       }
-      .value {
-        font-size: 1.02rem;
+      .detail-value {
         font-weight: 600;
         word-break: break-word;
       }
       .badge {
         display: inline-flex;
         align-items: center;
+        min-height: 24px;
+        padding: 0 8px;
         border-radius: 999px;
-        padding: 7px 12px;
-        font-size: 0.82rem;
-        font-weight: 600;
-        border: 1px solid var(--border);
-        background: rgba(255,255,255,0.06);
-      }
-      .badge.premium {
-        background: rgba(34, 197, 94, 0.12);
-        border-color: rgba(34, 197, 94, 0.24);
-        color: #bbf7d0;
+        font-size: 0.75rem;
+        font-weight: 500;
+        background: hsl(var(--primary) / 0.1);
+        color: hsl(var(--primary));
       }
       .actions {
         display: flex;
         gap: 12px;
         flex-wrap: wrap;
-        margin-top: 22px;
+        margin-top: 18px;
       }
-      a.button {
+      .theme-icon {
+        width: 18px;
+        height: 18px;
+      }
+      .theme-icon.moon { display: none; }
+      .dark .theme-icon.sun { display: none; }
+      .dark .theme-icon.moon { display: block; }
+      details.user-menu { position: relative; }
+      .dropdown {
+        position: absolute;
+        right: 0;
+        top: calc(100% + 8px);
+        min-width: 160px;
+        border: 1px solid hsl(var(--border));
+        background: hsl(var(--card));
+        border-radius: 0.75rem;
+        padding: 6px;
+        display: grid;
+        gap: 4px;
+      }
+      .dropdown a {
+        min-height: 34px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-height: 42px;
-        padding: 0 16px;
-        border-radius: 12px;
-        text-decoration: none;
-        font-weight: 600;
-        border: 1px solid var(--border);
-        background: rgba(255,255,255,0.05);
-        color: var(--foreground);
+        border-radius: 0.5rem;
+        color: hsl(var(--muted-foreground));
       }
-      a.button.primary {
-        background: #f8fafc;
-        color: #020617;
-        border-color: transparent;
+      .dropdown a:hover {
+        background: hsl(var(--accent));
+        color: hsl(var(--accent-foreground));
+      }
+      @media (max-width: 980px) {
+        .metrics-grid,
+        .details-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      @media (max-width: 720px) {
+        .header-inner,
+        .page {
+          padding-left: 12px;
+          padding-right: 12px;
+        }
+        .header-inner,
+        .header-right,
+        .actions {
+          flex-wrap: wrap;
+        }
       }
     </style>
   </head>
-  <body>
-    <div class="card">
-      <span class="eyebrow">Account overview</span>
-      <h1>Your dashboard account</h1>
-      <p class="subtext">This page now matches the darker dashboard treatment from the refreshed home view so the signed-in experience feels more cohesive.</p>
-      <div class="grid">
-        <div class="info-card">
-          <span class="label">Email</span>
-          <div class="value">{{ user.email }}</div>
-        </div>
-        <div class="info-card">
-          <span class="label">Membership</span>
-          <div class="value">
-            <span class="badge{% if user.is_premium %} premium{% endif %}">{{ 'Premium' if user.is_premium else 'Free' }}</span>
+  <body class="bg-background">
+    <div class="app-shell">
+      <header class="header bg-background">
+        <div class="header-inner">
+          <div class="header-left">
+            <div class="page-head">
+              <h1>Domain Intelligence</h1>
+              <p class="text-muted-foreground">Daily curated list of expiring domains, ranked by SEO authority.</p>
+            </div>
+          </div>
+          <div class="header-right">
+            <a class="header-link" href="{{ url_for('index') }}">Domains</a>
+            <a class="header-link" href="{{ url_for('logout') }}">Logout</a>
+            <button class="icon-button rounded-md" type="button" id="theme-toggle" aria-label="Toggle theme">
+              <svg class="theme-icon sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="4"></circle>
+                <path d="M12 2v2.5"></path>
+                <path d="M12 19.5V22"></path>
+                <path d="M4.93 4.93l1.77 1.77"></path>
+                <path d="M17.3 17.3l1.77 1.77"></path>
+                <path d="M2 12h2.5"></path>
+                <path d="M19.5 12H22"></path>
+                <path d="M4.93 19.07l1.77-1.77"></path>
+                <path d="M17.3 6.7l1.77-1.77"></path>
+              </svg>
+              <svg class="theme-icon moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"></path>
+              </svg>
+            </button>
+            <details class="user-menu">
+              <summary class="user-trigger rounded-md" aria-label="Profile menu">{{ user.email[0]|upper }}</summary>
+              <div class="dropdown text-card-foreground">
+                <a href="{{ url_for('user_page') }}">{{ user.email }}</a>
+                <a href="{{ url_for('logout') }}">Logout</a>
+              </div>
+            </details>
           </div>
         </div>
-        <div class="info-card">
-          <span class="label">Stripe customer</span>
-          <div class="value">{{ user.stripe_customer_id or 'Not connected yet' }}</div>
+      </header>
+
+      <main class="page">
+        <div class="container">
+          <section class="metrics-grid">
+            <article class="metric-card bg-card text-card-foreground border-border rounded-xl">
+              <div class="card-title text-muted-foreground">Email</div>
+              <div class="card-value">{{ user.email }}</div>
+              <div class="card-meta text-muted-foreground">Primary account identity</div>
+            </article>
+            <article class="metric-card bg-card text-card-foreground border-border rounded-xl">
+              <div class="card-title text-muted-foreground">Membership</div>
+              <div class="card-value">{{ 'Premium' if user.is_premium else 'Free' }}</div>
+              <div class="card-meta text-muted-foreground">Current access level</div>
+            </article>
+            <article class="metric-card bg-card text-card-foreground border-border rounded-xl">
+              <div class="card-title text-muted-foreground">Stripe Customer</div>
+              <div class="card-value">{{ user.stripe_customer_id or 'Not connected' }}</div>
+              <div class="card-meta text-muted-foreground">Billing profile reference</div>
+            </article>
+          </section>
+
+          <section class="account-panel bg-card text-card-foreground border-border rounded-xl">
+            <h2>Account Details</h2>
+            <p>Manage your current access and billing connection from the same dashboard style as the main domain view.</p>
+            <div class="details-grid">
+              <div class="detail-card">
+                <div class="detail-label">Email</div>
+                <div class="detail-value">{{ user.email }}</div>
+              </div>
+              <div class="detail-card">
+                <div class="detail-label">Plan</div>
+                <div class="detail-value"><span class="badge">{{ 'Premium' if user.is_premium else 'Free' }}</span></div>
+              </div>
+              <div class="detail-card">
+                <div class="detail-label">Stripe Customer</div>
+                <div class="detail-value">{{ user.stripe_customer_id or 'Not connected yet' }}</div>
+              </div>
+            </div>
+            <div class="actions">
+              {% if not user.is_premium %}
+                <a class="action-button primary" href="{{ url_for('checkout') }}">Upgrade to Premium</a>
+              {% endif %}
+              <a class="action-button rounded-md" href="{{ url_for('index') }}">Back to domains</a>
+            </div>
+          </section>
         </div>
-      </div>
-      <div class="actions">
-        {% if not user.is_premium %}
-          <a class="button primary" href="{{ url_for('checkout') }}">Upgrade to Premium</a>
-        {% endif %}
-        <a class="button" href="{{ url_for('index') }}">Back to domains</a>
-      </div>
+      </main>
     </div>
+
+    <script>
+      (function () {
+        const root = document.documentElement
+        const themeKey = 'theme'
+        const themeToggle = document.getElementById('theme-toggle')
+        const savedTheme = window.localStorage.getItem(themeKey)
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+
+        if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+          root.classList.add('dark')
+        }
+
+        if (themeToggle) {
+          themeToggle.addEventListener('click', function () {
+            root.classList.toggle('dark')
+            window.localStorage.setItem(themeKey, root.classList.contains('dark') ? 'dark' : 'light')
+          })
+        }
+      })()
+    </script>
   </body>
 </html>
 """
