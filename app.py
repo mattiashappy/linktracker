@@ -742,26 +742,22 @@ def index():
     domains_with_da = [domain.da for domain in domains if domain.da is not None]
     domains_with_links = [domain.linking_root_domains for domain in domains if domain.linking_root_domains is not None]
     premium_opportunities = sum(1 for domain in domains if (domain.da or 0) >= 20)
+    average_referring_domains = round(sum(domains_with_links) / len(domains_with_links), 1) if domains_with_links else "N/A"
     dashboard_stats = [
         {
             "label": "Total Domains",
-            "value": total_domains,
-            "detail": "Domains available for the active release date.",
+            "value": total_filtered,
+            "detail": "Active in current dataset",
         },
         {
-            "label": "Premium Opportunities",
+            "label": "High Authority",
             "value": premium_opportunities,
-            "detail": "Visible rows with DA 20 or higher.",
+            "detail": "DA 20+",
         },
         {
-            "label": "Rows This Page",
-            "value": len(domains),
-            "detail": "Rows loaded in the current page.",
-        },
-        {
-            "label": "Moz Coverage",
-            "value": f"{len(domains_with_da)}/{len(domains)}" if domains else "0/0",
-            "detail": "Rows on this page with Moz metrics attached.",
+            "label": "Referring Domains",
+            "value": average_referring_domains,
+            "detail": "Average across list",
         },
     ]
     start_index = ((page - 1) * page_size) + 1 if total_filtered else 0
