@@ -1,0 +1,1075 @@
+import os
+import re
+from datetime import date, datetime, timezone
+from types import SimpleNamespace
+
+import requests
+import stripe
+from bs4 import BeautifulSoup
+from flask import Flask, abort, redirect, render_template, render_template_string, request, session, url_for
+from flask_login import LoginManager, current_user, login_required, login_user, logout_user
+from requests.auth import HTTPBasicAuth
+
+from models import Domain, User, db
+
+SOURCE_URL = "https://www.rymdweb.com/domain/snapback/?action=date"
+MOZ_API_URL = "https://lsapi.seomoz.com/v2/url_metrics"
+REQUEST_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+    "Accept-Language": "en-US,en;q=0.9,sv;q=0.8",
+}
+DOMAIN_PATTERN = re.compile(r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:se|nu)\b", re.IGNORECASE)
+RELEASE_DATE_PATTERN = re.compile(r"Domäner som släpps\s+(\d{4}-\d{2}-\d{2})", re.IGNORECASE)
+
+
+def normalize_database_url(database_url: str) -> str:
+    if database_url.startswith("postgres://"):
+        return database_url.replace("postgres://", "postgresql://", 1)
+    return database_url
+
+
+app = Flask(__name__)
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
+app.config["SQLALCHEMY_DATABASE_URI"] = normalize_database_url(
+    os.environ.get("DATABASE_URL", "sqlite:///app.db")
+)
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+db.init_app(app)
+
+login_manager = LoginManager()
+login_manager.login_view = "login"
+login_manager.init_app(app)
+
+def get_stripe_publishable_key() -> str:
+    return (os.environ.get("STRIPE_PUBLISHABLE_KEY") or os.environ.get("Publishable_key_test") or "").strip()
+
+
+
+def get_stripe_secret_key() -> str:
+    return (os.environ.get("STRIPE_SECRET_KEY") or os.environ.get("Secret_key_test") or "").strip()
+
+
+
+def get_stripe_price_id() -> str:
+    return (
+        os.environ.get("STRIPE_PRICE_ID")
+        or os.environ.get("STRIPE_PRICE_ID_TEST")
+        or os.environ.get("Price_id_test")
+        or ""
+    ).strip()
+
+
+stripe.api_key = get_stripe_secret_key()
+
+
+
+
+def fetch_release_date():
+    response = requests.get(SOURCE_URL, headers=REQUEST_HEADERS, timeout=20)
+    response.raise_for_status()
+
+    text = response.text
+    match = RELEASE_DATE_PATTERN.search(text)
+    if match:
+        return match.group(1)
+
+    soup = BeautifulSoup(text, "html.parser")
+    page_text = soup.get_text(" ", strip=True)
+    match = RELEASE_DATE_PATTERN.search(page_text)
+    return match.group(1) if match else None
+
+
+def scrape_domains(limit: int | None = None):
+    response = requests.get(SOURCE_URL, headers=REQUEST_HEADERS, timeout=20)
+    response.raise_for_status()
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    extracted = []
+    seen = set()
+
+    for selector in ("table td", "table th", "tbody td", "a", "tr"):
+        for element in soup.select(selector):
+            text = " ".join(element.stripped_strings)
+            for match in DOMAIN_PATTERN.findall(text):
+                domain = match.lower().strip()
+                if domain not in seen:
+                    seen.add(domain)
+                    extracted.append(domain)
+                    if limit and len(extracted) >= limit:
+                        return extracted
+
+    page_text = soup.get_text(" ", strip=True)
+    for match in DOMAIN_PATTERN.findall(page_text):
+        domain = match.lower().strip()
+        if domain not in seen:
+            seen.add(domain)
+            extracted.append(domain)
+            if limit and len(extracted) >= limit:
+                break
+
+    return extracted
+
+
+
+def get_moz_auth_options():
+    api_token = (os.environ.get("MOZ_API_TOKEN") or os.environ.get("Moz-api-token") or "").strip()
+    if api_token:
+        normalized = api_token.lower()
+        if normalized.startswith("basic ") or normalized.startswith("bearer "):
+            return [{"headers": {"Authorization": api_token}}]
+        if ":" in api_token:
+            access_id, secret_key = api_token.split(":", 1)
+            return [{"auth": HTTPBasicAuth(access_id.strip(), secret_key.strip())}]
+        return [
+            {"headers": {"Authorization": f"Basic {api_token}"}},
+            {"headers": {"x-moz-token": api_token}},
+        ]
+
+    access_id = (os.environ.get("MOZ_ACCESS_ID") or "").strip()
+    secret_key = (os.environ.get("MOZ_SECRET_KEY") or "").strip()
+    if access_id and secret_key:
+        return [{"auth": HTTPBasicAuth(access_id, secret_key)}]
+
+    return []
+
+
+
+def pick_metric(item, *keys):
+    metrics = item.get("metrics") if isinstance(item.get("metrics"), dict) else {}
+    for key in keys:
+        if item.get(key) is not None:
+            return item.get(key)
+        if metrics.get(key) is not None:
+            return metrics.get(key)
+    return None
+
+
+
+def extract_results(data):
+    if isinstance(data, list):
+        return [item for item in data if isinstance(item, dict)]
+    if isinstance(data, dict):
+        for key in ("results", "url_metrics", "data"):
+            value = data.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)]
+        if any(key in data for key in ("target", "domain_authority", "metrics")):
+            return [data]
+    return []
+
+
+
+def fetch_moz_metrics(domains):
+    if not domains:
+        return []
+
+    auth_options = get_moz_auth_options()
+    if not auth_options:
+        return []
+
+    moz_targets = [domain if domain.startswith(("http://", "https://")) else f"https://{domain}" for domain in domains]
+    response = None
+    for auth_kwargs in auth_options:
+        try:
+            candidate = requests.post(
+                MOZ_API_URL,
+                json={"targets": moz_targets},
+                timeout=30,
+                **auth_kwargs,
+            )
+        except requests.RequestException:
+            continue
+
+        if candidate.ok:
+            response = candidate
+            break
+        if candidate.status_code in (401, 403):
+            continue
+        return []
+
+    if response is None:
+        return []
+
+    results = extract_results(response.json())
+    output = []
+    for index, domain in enumerate(domains):
+        item = results[index] if index < len(results) else {}
+        output.append(
+            {
+                "domain_name": domain,
+                "da": pick_metric(item, "domain_authority"),
+                "linking_root_domains": pick_metric(
+                    item,
+                    "root_domains_linking_to_root_domain",
+                    "root_domains_to_root_domain",
+                    "linking_root_domains",
+                ),
+            }
+        )
+    return output
+
+
+
+def hydrate_visible_domains(domains, fetch_date):
+    metrics = fetch_moz_metrics([domain.domain_name for domain in domains])
+    if not metrics:
+        return domains
+
+    metrics_by_domain = {item["domain_name"]: item for item in metrics}
+    any_values = False
+    for domain in domains:
+        metric = metrics_by_domain.get(domain.domain_name)
+        if metric is None:
+            continue
+        domain.da = metric["da"]
+        domain.linking_root_domains = metric["linking_root_domains"]
+        if domain.da is not None or domain.linking_root_domains is not None:
+            any_values = True
+
+    if any_values and fetch_date is not None:
+        if db.session.get_bind() is not None:
+            if not Domain.query.filter_by(fetch_date=fetch_date).first():
+                for domain in domains:
+                    db.session.add(
+                        Domain(
+                            domain_name=domain.domain_name,
+                            da=domain.da,
+                            linking_root_domains=domain.linking_root_domains,
+                            fetch_date=fetch_date,
+                        )
+                    )
+                db.session.commit()
+            else:
+                db.session.commit()
+
+    return domains
+
+
+
+
+
+def ensure_today_domain_snapshot(scraped_domains, visible_domains, fetch_date, release_date_value):
+    if not scraped_domains or fetch_date is None:
+        return
+
+    existing_rows = Domain.query.filter_by(fetch_date=fetch_date).all()
+    if len(existing_rows) >= len(scraped_domains):
+        return
+
+    existing_domains = {row.domain_name for row in existing_rows}
+    visible_map = {domain.domain_name: domain for domain in visible_domains}
+
+    for domain_name in scraped_domains:
+        if domain_name in existing_domains:
+            continue
+        visible_row = visible_map.get(domain_name)
+        db.session.add(
+            Domain(
+                domain_name=domain_name,
+                da=getattr(visible_row, "da", None),
+                linking_root_domains=getattr(visible_row, "linking_root_domains", None),
+                fetch_date=fetch_date,
+                release_date=release_date_value,
+            )
+        )
+
+    db.session.commit()
+
+USER_TEMPLATE = """
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <title>User Page</title>
+    <style>
+      :root {
+        --bg: #09090b;
+        --card: rgba(2, 6, 23, 0.78);
+        --border: rgba(148, 163, 184, 0.16);
+        --foreground: #f8fafc;
+        --muted: #94a3b8;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(99, 102, 241, 0.25), transparent 26%),
+          linear-gradient(180deg, #020617 0%, #09090b 100%);
+        padding: 24px 16px 48px;
+        color: var(--foreground);
+      }
+      .card {
+        max-width: 880px;
+        margin: 0 auto;
+        background: var(--card);
+        border: 1px solid var(--border);
+        padding: 28px;
+        border-radius: 28px;
+        box-shadow: 0 24px 80px rgba(2, 6, 23, 0.4);
+        backdrop-filter: blur(18px);
+      }
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        padding: 7px 11px;
+        color: var(--muted);
+        background: rgba(255,255,255,0.04);
+        font-size: 0.82rem;
+      }
+      h1 {
+        margin: 14px 0 8px;
+        font-size: clamp(2rem, 4vw, 3rem);
+        letter-spacing: -0.05em;
+      }
+      .subtext {
+        margin: 0 0 22px;
+        color: var(--muted);
+        line-height: 1.7;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 16px;
+        margin-top: 18px;
+      }
+      .info-card {
+        border-radius: 22px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.04);
+        padding: 18px;
+      }
+      .label {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--muted);
+        font-size: 0.82rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .value {
+        font-size: 1.02rem;
+        font-weight: 600;
+        word-break: break-word;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 7px 12px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.06);
+      }
+      .badge.premium {
+        background: rgba(34, 197, 94, 0.12);
+        border-color: rgba(34, 197, 94, 0.24);
+        color: #bbf7d0;
+      }
+      .actions {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-top: 22px;
+      }
+      a.button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 42px;
+        padding: 0 16px;
+        border-radius: 12px;
+        text-decoration: none;
+        font-weight: 600;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.05);
+        color: var(--foreground);
+      }
+      a.button.primary {
+        background: #f8fafc;
+        color: #020617;
+        border-color: transparent;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <span class="eyebrow">Account overview</span>
+      <h1>Your dashboard account</h1>
+      <p class="subtext">This page now matches the darker dashboard treatment from the refreshed home view so the signed-in experience feels more cohesive.</p>
+      <div class="grid">
+        <div class="info-card">
+          <span class="label">Email</span>
+          <div class="value">{{ user.email }}</div>
+        </div>
+        <div class="info-card">
+          <span class="label">Membership</span>
+          <div class="value">
+            <span class="badge{% if user.is_premium %} premium{% endif %}">{{ 'Premium' if user.is_premium else 'Free' }}</span>
+          </div>
+        </div>
+        <div class="info-card">
+          <span class="label">Stripe customer</span>
+          <div class="value">{{ user.stripe_customer_id or 'Not connected yet' }}</div>
+        </div>
+      </div>
+      <div class="actions">
+        {% if not user.is_premium %}
+          <a class="button primary" href="{{ url_for('checkout') }}">Upgrade to Premium</a>
+        {% endif %}
+        <a class="button" href="{{ url_for('index') }}">Back to domains</a>
+      </div>
+    </div>
+  </body>
+</html>
+"""
+
+ADMIN_LOGIN_TEMPLATE = """
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Admin Login</title>
+    <style>
+      body { font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%); padding: 32px; color: #0f172a; }
+      .card { max-width: 420px; margin: 0 auto; background: rgba(255,255,255,0.92); border: 1px solid #e2e8f0; padding: 28px; border-radius: 24px; box-shadow: 0 24px 80px rgba(15, 23, 42, 0.08); }
+      input { width: 100%; padding: 12px; margin: 8px 0 14px; border: 1px solid #d1d5db; border-radius: 14px; box-sizing: border-box; }
+      button, a.button { display: inline-block; background: #0f172a; color: #fff; padding: 12px 16px; border-radius: 999px; text-decoration: none; border: 0; cursor: pointer; }
+      .error { margin-bottom: 14px; color: #b91c1c; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Admin Login</h1>
+      {% if error %}<div class="error">{{ error }}</div>{% endif %}
+      <form method="post">
+        <label for="username">Username</label>
+        <input id="username" name="username" type="text" required>
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" required>
+        <button type="submit">Login</button>
+      </form>
+      <p><a class="button" href="{{ url_for('index') }}">Back to domains</a></p>
+    </div>
+  </body>
+</html>
+"""
+
+ADMIN_TEMPLATE = """
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Admin Page</title>
+    <style>
+      body { font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%); padding: 32px; color: #0f172a; }
+      .card { max-width: 1100px; margin: 0 auto; background: rgba(255,255,255,0.92); border: 1px solid #e2e8f0; padding: 28px; border-radius: 24px; box-shadow: 0 24px 80px rgba(15, 23, 42, 0.08); }
+      .stats { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+      .stat { background: #f8fafc; border: 1px solid #e2e8f0; padding: 16px; border-radius: 18px; min-width: 180px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 16px; overflow: hidden; }
+      th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid #e5e7eb; }
+      th { background: #f8fafc; color: #0f172a; }
+      a.button { display: inline-block; background: #0f172a; color: #fff; padding: 12px 16px; border-radius: 999px; text-decoration: none; margin-right: 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Admin Page</h1>
+      <div class="stats">
+        <div class="stat"><strong>Total users</strong><br>{{ total_users }}</div>
+        <div class="stat"><strong>Premium users</strong><br>{{ premium_users }}</div>
+        <div class="stat"><strong>Today's domains</strong><br>{{ today_domains }}</div>
+      </div>
+      <p>
+        <a class="button" href="{{ url_for('index') }}">Back to domains</a>
+        <a class="button" href="{{ url_for('admin_logout') }}">Admin logout</a>
+      </p>
+      <h2>Users</h2>
+      <table>
+        <thead>
+          <tr><th>ID</th><th>Email</th><th>Premium</th><th>Stripe Customer</th></tr>
+        </thead>
+        <tbody>
+          {% for user in users %}
+            <tr>
+              <td>{{ user.id }}</td>
+              <td>{{ user.email }}</td>
+              <td>{{ 'Yes' if user.is_premium else 'No' }}</td>
+              <td>{{ user.stripe_customer_id or '—' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <h2>Latest domains</h2>
+      <table>
+        <thead>
+          <tr><th>Domain</th><th>DA</th><th>Linking Root Domains</th><th>Fetch Date</th></tr>
+        </thead>
+        <tbody>
+          {% for domain in domains %}
+            <tr>
+              <td>{{ domain.domain_name }}</td>
+              <td>{{ domain.da if domain.da is not none else 'N/A' }}</td>
+              <td>{{ domain.linking_root_domains if domain.linking_root_domains is not none else 'N/A' }}</td>
+              <td>{{ domain.fetch_date }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </body>
+</html>
+"""
+
+AUTH_TEMPLATE = """
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }}</title>
+    <style>
+      body { font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%); padding: 32px; color: #0f172a; }
+      .card { max-width: 420px; margin: 0 auto; background: rgba(255,255,255,0.92); border: 1px solid #e2e8f0; padding: 28px; border-radius: 24px; box-shadow: 0 24px 80px rgba(15, 23, 42, 0.08); }
+      input { width: 100%; padding: 12px; margin: 8px 0 14px; border: 1px solid #d1d5db; border-radius: 14px; box-sizing: border-box; }
+      button, a.button { display: inline-block; background: #0f172a; color: #fff; padding: 12px 16px; border-radius: 999px; text-decoration: none; border: 0; cursor: pointer; }
+      .error { margin-bottom: 14px; color: #b91c1c; }
+      .meta { margin-top: 16px; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>{{ title }}</h1>
+      {% if description %}<p class="meta">{{ description }}</p>{% endif %}
+      {% if error %}<div class="error">{{ error }}</div>{% endif %}
+      <form method="post">
+        {% if show_email_field is not defined or show_email_field %}
+          <label for="email">{{ identifier_label or 'Email' }}</label>
+          <input id="email" name="email" type="{{ identifier_type or 'email' }}" value="{{ email_value or '' }}" required>
+        {% endif %}
+        {% if show_password_field is not defined or show_password_field %}
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" required>
+        {% endif %}
+        <button type="submit">{{ submit_label }}</button>
+      </form>
+      <p class="meta">
+        <a class="button" href="{{ url_for('index') }}">Back to domains</a>
+      </p>
+    </div>
+  </body>
+</html>
+"""
+
+
+
+
+def get_admin_credentials():
+    admin_username = (os.environ.get("username") or os.environ.get("ADMIN_USERNAME") or "").strip()
+    admin_password = (os.environ.get("user_password") or os.environ.get("ADMIN_PASSWORD") or "").strip()
+    return admin_username, admin_password
+
+
+def normalize_email(email: str) -> str:
+    return email.strip().lower()
+
+
+def get_user_by_email(email: str):
+    normalized = normalize_email(email)
+    if not normalized:
+        return None
+    return User.query.filter_by(email=normalized).first()
+
+
+def get_existing_stripe_customer(email: str):
+    normalized = normalize_email(email)
+    if not normalized:
+        return None
+
+    try:
+        customers = stripe.Customer.list(email=normalized, limit=1).get("data", [])
+    except stripe.error.StripeError:
+        return None
+    return customers[0] if customers else None
+
+
+def stripe_customer_has_active_subscription(customer_id: str) -> bool:
+    if not customer_id:
+        return False
+
+    try:
+        subscriptions = stripe.Subscription.list(customer=customer_id, status="all", limit=10).get("data", [])
+    except stripe.error.StripeError:
+        return False
+
+    active_statuses = {"active", "trialing", "past_due", "unpaid", "incomplete"}
+    return any(subscription.get("status") in active_statuses for subscription in subscriptions)
+
+
+@login_manager.user_loader
+def load_user(user_id: str):
+    return db.session.get(User, int(user_id))
+
+
+def ensure_database_schema():
+    db.create_all()
+    with db.engine.begin() as connection:
+        connection.execute(db.text("ALTER TABLE domain ADD COLUMN IF NOT EXISTS release_date DATE"))
+        connection.execute(db.text("CREATE INDEX IF NOT EXISTS ix_domain_release_date ON domain (release_date)"))
+        connection.execute(db.text("UPDATE domain SET release_date = fetch_date WHERE release_date IS NULL"))
+        try:
+            connection.execute(db.text('ALTER TABLE "user" ALTER COLUMN password_hash DROP NOT NULL'))
+        except Exception:
+            pass
+
+
+with app.app_context():
+    ensure_database_schema()
+
+
+@app.route("/")
+def index():
+    today = datetime.now(timezone.utc).date()
+    search_query = request.args.get("q", "").strip().lower()
+    try:
+        page = max(int(request.args.get("page", "1")), 1)
+    except ValueError:
+        page = 1
+    try:
+        requested_page_size = int(request.args.get("page_size", "25"))
+    except ValueError:
+        requested_page_size = 25
+    page_size = requested_page_size if requested_page_size in {10, 25, 50} else 25
+    latest_fetch_date = db.session.query(db.func.max(Domain.fetch_date)).scalar()
+    latest_release_date = db.session.query(db.func.max(Domain.release_date)).scalar()
+    using_live_fallback = False
+    try:
+        release_date = fetch_release_date()
+    except Exception:
+        release_date = None
+
+    current_release_date = date.fromisoformat(release_date) if release_date else None
+    if current_release_date and Domain.query.filter_by(release_date=current_release_date).first():
+        active_date = current_release_date
+    elif latest_release_date:
+        active_date = latest_release_date
+    elif Domain.query.filter_by(fetch_date=today).first():
+        active_date = today
+    else:
+        active_date = latest_fetch_date
+
+    if active_date is None:
+        try:
+            scraped_domains = scrape_domains()
+        except Exception:
+            scraped_domains = []
+
+        filtered_scraped_domains = [
+            domain for domain in scraped_domains if search_query in domain.lower()
+        ] if search_query else scraped_domains
+        total_domains = len(scraped_domains)
+        total_filtered = len(filtered_scraped_domains)
+
+        if not current_user.is_authenticated or not current_user.is_premium:
+            accessible_domains = filtered_scraped_domains[:25]
+            is_limited = total_filtered > 25
+        else:
+            accessible_domains = filtered_scraped_domains
+            is_limited = False
+
+        total_pages = max(1, (len(accessible_domains) + page_size - 1) // page_size) if accessible_domains else 1
+        if page > total_pages:
+            page = total_pages
+        start_offset = (page - 1) * page_size
+        visible_domains = accessible_domains[start_offset:start_offset + page_size]
+
+        domains = [
+            SimpleNamespace(
+                domain_name=domain,
+                da=None,
+                linking_root_domains=None,
+                release_date=current_release_date or release_date,
+            )
+            for domain in visible_domains
+        ]
+        domains = hydrate_visible_domains(domains, today)
+        ensure_today_domain_snapshot(scraped_domains, domains, today, current_release_date or today)
+        hidden_count = max(total_domains - len(accessible_domains), 0)
+        using_live_fallback = bool(scraped_domains)
+        if any(domain.da is not None or domain.linking_root_domains is not None for domain in domains):
+            active_date = current_release_date or today
+            using_live_fallback = False
+    else:
+        base_query = Domain.query.filter(
+            (Domain.release_date == active_date) | ((Domain.release_date.is_(None)) & (Domain.fetch_date == active_date))
+        ).order_by(
+            Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc()
+        )
+        total_domains = base_query.count()
+        query = base_query
+        if search_query:
+            query = query.filter(Domain.domain_name.ilike(f"%{search_query}%"))
+        total_filtered = query.count()
+
+        if not current_user.is_authenticated or not current_user.is_premium:
+            accessible_domains = query.limit(25).all()
+            is_limited = total_filtered > 25
+            total_pages = max(1, (len(accessible_domains) + page_size - 1) // page_size) if accessible_domains else 1
+            if page > total_pages:
+                page = total_pages
+            start_offset = (page - 1) * page_size
+            domains = accessible_domains[start_offset:start_offset + page_size]
+        else:
+            total_pages = max(1, (total_filtered + page_size - 1) // page_size) if total_filtered else 1
+            if page > total_pages:
+                page = total_pages
+            domains = query.offset((page - 1) * page_size).limit(page_size).all()
+            is_limited = False
+
+        hidden_count = max(total_domains - min(total_filtered, 25), 0) if not current_user.is_authenticated or not current_user.is_premium else 0
+        if any(domain.da is None and domain.linking_root_domains is None for domain in domains):
+            domains = hydrate_visible_domains(domains, active_date)
+
+    domains_with_da = [domain.da for domain in domains if domain.da is not None]
+    domains_with_links = [domain.linking_root_domains for domain in domains if domain.linking_root_domains is not None]
+    premium_opportunities = sum(1 for domain in domains if (domain.da or 0) >= 20)
+    average_referring_domains = round(sum(domains_with_links) / len(domains_with_links), 1) if domains_with_links else "N/A"
+    dashboard_stats = [
+        {
+            "label": "Total Domains",
+            "value": total_filtered,
+            "detail": "Active in current dataset",
+        },
+        {
+            "label": "High Authority",
+            "value": premium_opportunities,
+            "detail": "DA 20+",
+        },
+        {
+            "label": "Referring Domains",
+            "value": average_referring_domains,
+            "detail": "Average across list",
+        },
+    ]
+    start_index = ((page - 1) * page_size) + 1 if total_filtered else 0
+    end_index = min((page - 1) * page_size + len(domains), total_filtered) if total_filtered else 0
+
+    return render_template(
+        "index.html",
+        domains=domains,
+        is_limited=is_limited,
+        total_domains=total_domains,
+        total_filtered=total_filtered,
+        hidden_count=hidden_count,
+        active_date=active_date,
+        using_latest_available=active_date is not None and active_date != today,
+        using_live_fallback=using_live_fallback,
+        release_date=release_date,
+        dashboard_stats=dashboard_stats,
+        search_query=search_query,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+        start_index=start_index,
+        end_index=end_index,
+    )
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    return redirect(url_for("checkout"))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
+    if request.method == "POST":
+        identifier = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
+        admin_username, admin_password = get_admin_credentials()
+
+        if admin_username and admin_password and identifier == admin_username and password == admin_password:
+            session["is_admin"] = True
+            return redirect(url_for("admin"))
+
+        user = get_user_by_email(identifier)
+        if user is None or not user.check_password(password):
+            error = "Invalid login credentials."
+        else:
+            login_user(user)
+            return redirect(url_for("index"))
+
+    return render_template_string(
+        AUTH_TEMPLATE,
+        title="Login",
+        submit_label="Sign in",
+        error=error,
+        description=None,
+        identifier_label="Email or username",
+        identifier_type="text",
+    )
+
+
+@app.route("/logout")
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for("index"))
+
+@app.route("/user")
+@login_required
+def user_page():
+    return render_template_string(USER_TEMPLATE, user=current_user)
+
+
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    return redirect(url_for("login"))
+
+
+@app.route("/admin/logout")
+def admin_logout():
+    session.pop("is_admin", None)
+    return redirect(url_for("login"))
+
+
+@app.route("/admin")
+def admin():
+    if not session.get("is_admin"):
+        return redirect(url_for("login"))
+
+    today = datetime.now(timezone.utc).date()
+    try:
+        current_release_date_text = fetch_release_date()
+        current_release_date = date.fromisoformat(current_release_date_text) if current_release_date_text else today
+    except Exception:
+        current_release_date = today
+
+    today_rows = Domain.query.filter_by(fetch_date=today).order_by(Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc()).all()
+    if len(today_rows) <= 25:
+        try:
+            scraped_domains = scrape_domains()
+            ensure_today_domain_snapshot(scraped_domains, today_rows, today, current_release_date or today)
+        except Exception:
+            pass
+
+    users = User.query.order_by(User.id.desc()).all()
+    domains = Domain.query.order_by(Domain.fetch_date.desc(), Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc()).all()
+    total_users = User.query.count()
+    premium_users = User.query.filter_by(is_premium=True).count()
+    today_domains = Domain.query.filter_by(fetch_date=today).count()
+    return render_template_string(
+        ADMIN_TEMPLATE,
+        users=users,
+        domains=domains,
+        total_users=total_users,
+        premium_users=premium_users,
+        today_domains=today_domains,
+    )
+
+
+
+
+@app.route("/checkout", methods=["GET", "POST"])
+def checkout():
+    if current_user.is_authenticated and current_user.is_premium:
+        return redirect(url_for("index"))
+
+    price_id = get_stripe_price_id()
+    if not get_stripe_secret_key() or not price_id:
+        abort(500, "Stripe is not configured. Set STRIPE_SECRET_KEY/Secret_key_test and STRIPE_PRICE_ID/STRIPE_PRICE_ID_TEST.")
+
+    error = None
+    email_value = current_user.email if current_user.is_authenticated else request.form.get("email", "").strip()
+    user = current_user if current_user.is_authenticated else None
+    existing_customer_id = None
+
+    if not current_user.is_authenticated and request.method == "GET":
+        return render_template_string(
+            AUTH_TEMPLATE,
+            title="Start Premium Checkout",
+            submit_label="Continue to Stripe",
+            error=None,
+            description="Use your email first so we can ensure every email address maps to only one account and one Stripe customer.",
+            identifier_label="Email",
+            identifier_type="email",
+            show_email_field=True,
+            show_password_field=False,
+            email_value="",
+        )
+
+    if not current_user.is_authenticated:
+        email_value = normalize_email(email_value)
+        if not email_value:
+            error = "Please enter your email address."
+        else:
+            user = get_user_by_email(email_value)
+            if user is not None:
+                error = "An account or payment profile already exists for this email. Please log in to continue."
+            else:
+                existing_customer = get_existing_stripe_customer(email_value)
+                if existing_customer is not None:
+                    existing_customer_id = existing_customer.get("id")
+                    if stripe_customer_has_active_subscription(existing_customer_id):
+                        error = "A Stripe subscription already exists for this email. Please log in to the existing account instead."
+
+    if error:
+        return render_template_string(
+            AUTH_TEMPLATE,
+            title="Start Premium Checkout",
+            submit_label="Continue to Stripe",
+            error=error,
+            description="Use your email first so we can ensure every email address maps to only one account and one Stripe customer.",
+            identifier_label="Email",
+            identifier_type="email",
+            show_email_field=True,
+            show_password_field=False,
+            email_value=email_value,
+        )
+
+    checkout_kwargs = {
+        "mode": "subscription",
+        "line_items": [{"price": price_id, "quantity": 1}],
+        "success_url": url_for("complete_setup", _external=True) + "?session_id={CHECKOUT_SESSION_ID}",
+        "cancel_url": url_for("index", _external=True),
+    }
+
+    checkout_email = normalize_email(current_user.email if current_user.is_authenticated else email_value)
+    if user is not None and user.is_authenticated:
+        checkout_kwargs["client_reference_id"] = str(user.id)
+        if user.stripe_customer_id:
+            checkout_kwargs["customer"] = user.stripe_customer_id
+        else:
+            checkout_kwargs["customer_email"] = checkout_email
+    elif existing_customer_id:
+        checkout_kwargs["customer"] = existing_customer_id
+    else:
+        checkout_kwargs["customer_email"] = checkout_email
+
+    try:
+        checkout_session = stripe.checkout.Session.create(**checkout_kwargs)
+    except stripe.error.StripeError as exc:
+        return abort(500, f"Stripe checkout error: {str(exc)}. Make sure the price ID matches the configured Stripe key and test/live mode.")
+
+    return redirect(checkout_session.url, code=303)
+
+
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    payload = request.get_data(as_text=False)
+    signature = request.headers.get("Stripe-Signature", "")
+    webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+
+    try:
+        if webhook_secret:
+            event = stripe.Webhook.construct_event(payload, signature, webhook_secret)
+        else:
+            event = request.get_json(force=True)
+    except Exception as exc:
+        return {"error": str(exc)}, 400
+
+    if event.get("type") == "checkout.session.completed":
+        session = event["data"]["object"]
+        user = None
+
+        client_reference_id = session.get("client_reference_id")
+        if client_reference_id and str(client_reference_id).isdigit():
+            user = db.session.get(User, int(client_reference_id))
+
+        if user is None:
+            email = (
+                (session.get("customer_details") or {}).get("email")
+                or session.get("customer_email")
+            )
+            if email:
+                email = normalize_email(email)
+                user = get_user_by_email(email)
+
+                if user is None:
+                    user = User(email=email)
+                    db.session.add(user)
+
+        if user is not None:
+            session_customer_id = session.get("customer")
+            if user.stripe_customer_id and session_customer_id and user.stripe_customer_id != session_customer_id:
+                return {"status": "ignored_duplicate_checkout"}, 200
+            user.is_premium = True
+            user.stripe_customer_id = session_customer_id or user.stripe_customer_id
+            db.session.commit()
+
+    return {"status": "ok"}, 200
+
+
+@app.route("/complete_setup", methods=["GET", "POST"])
+def complete_setup():
+    session_id = request.args.get("session_id")
+    if not session_id:
+        return redirect(url_for("index"))
+
+    try:
+        checkout_session = stripe.checkout.Session.retrieve(session_id)
+        email = (checkout_session.get("customer_details") or {}).get("email")
+        if not email:
+            return abort(400, "Could not verify email from Stripe.")
+        email = normalize_email(email)
+    except Exception as e:
+        return abort(400, f"Session error: {str(e)}")
+
+    error = None
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        if not password:
+            error = "Please enter a password."
+        else:
+            user = get_user_by_email(email)
+            if user is None:
+                user = User(email=email)
+                db.session.add(user)
+
+            session_customer_id = checkout_session.get("customer")
+            if user.stripe_customer_id and session_customer_id and user.stripe_customer_id != session_customer_id:
+                error = "This email is already linked to a different payment profile. Please log in to the existing account instead."
+                return render_template_string(SETUP_TEMPLATE, email=email, error=error)
+
+            user.set_password(password)
+            user.is_premium = True
+            user.stripe_customer_id = session_customer_id or user.stripe_customer_id
+            db.session.commit()
+            login_user(user)
+            return redirect(url_for("index"))
+
+    SETUP_TEMPLATE = """
+    <!doctype html>
+    <html lang="en">
+      <head><title>Complete Setup</title><style>body { font-family: Arial; background: #f4f7fb; padding: 32px; } .card { max-width: 420px; margin: 0 auto; background: #fff; padding: 24px; border-radius: 12px; } input { width: 100%; padding: 12px; margin: 8px 0 14px; border: 1px solid #d1d5db; border-radius: 8px; box-sizing: border-box; } button { background: #111827; color: #fff; padding: 12px 16px; border-radius: 8px; border: 0; cursor: pointer; } .error { margin-bottom: 14px; color: #b91c1c; }</style></head>
+      <body>
+        <div class="card">
+          <h1>Welcome!</h1>
+          <p>Your payment was successful. Please set a password for <strong>{{ email }}</strong> to complete your account.</p>
+          {% if error %}<div class="error">{{ error }}</div>{% endif %}
+          <form method="post">
+            <label>Password</label>
+            <input name="password" type="password" required>
+            <button type="submit">Complete Setup</button>
+          </form>
+        </div>
+      </body>
+    </html>
+    """
+    return render_template_string(SETUP_TEMPLATE, email=email, error=error)
+
+
+if __name__ == "__main__":
+    app.run(debug=True)
