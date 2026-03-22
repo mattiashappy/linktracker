@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <title>Domain Intelligence</title>
+    <style>
+      :root {
+        --background: 0 0% 100%;
+        --foreground: 222.2 84% 4.9%;
+        --card: 0 0% 100%;
+        --card-foreground: 222.2 84% 4.9%;
+        --primary: 222.2 47.4% 11.2%;
+        --primary-foreground: 210 40% 98%;
+        --secondary: 210 40% 96.1%;
+        --secondary-foreground: 222.2 47.4% 11.2%;
+        --muted: 210 40% 96.1%;
+        --muted-foreground: 215.4 16.3% 46.9%;
+        --accent: 210 40% 96.1%;
+        --accent-foreground: 222.2 47.4% 11.2%;
+        --border: 214.3 31.8% 91.4%;
+        --input: 214.3 31.8% 91.4%;
+        --ring: 221.2 83.2% 53.3%;
+      }
+
+      .dark {
+        --background: 222.2 84% 4.9%;
+        --foreground: 210 40% 98%;
+        --card: 222.2 47.4% 11.2%;
+        --card-foreground: 210 40% 98%;
+        --primary: 210 40% 98%;
+        --primary-foreground: 222.2 47.4% 11.2%;
+        --secondary: 217.2 32.6% 17.5%;
+        --secondary-foreground: 210 40% 98%;
+        --muted: 217.2 32.6% 17.5%;
+        --muted-foreground: 215 20.2% 65.1%;
+        --accent: 217.2 32.6% 17.5%;
+        --accent-foreground: 210 40% 98%;
+        --border: 217.2 32.6% 17.5%;
+        --input: 217.2 32.6% 17.5%;
+        --ring: 212.7 26.8% 83.9%;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        transition: background-color 0.3s ease, color 0.3s ease;
+      }
+
+      a { color: inherit; text-decoration: none; }
+      button, input, select { font: inherit; }
+
+      .bg-background {
+        background: hsl(var(--background));
+        color: hsl(var(--foreground));
+      }
+
+      .bg-card {
+        background: hsl(var(--card));
+        transition: background-color 0.3s ease, color 0.3s ease;
+      }
+
+      .text-card-foreground { color: hsl(var(--card-foreground)); }
+      .border-border { border-color: hsl(var(--border)); }
+      .text-muted-foreground { color: hsl(var(--muted-foreground)); }
+      .rounded-xl { border-radius: 0.75rem; }
+      .rounded-md { border-radius: 0.375rem; }
+
+      .app-shell {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .header {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        border-bottom: 1px solid hsl(var(--border));
+        background: hsl(var(--background));
+      }
+
+      .header-inner,
+      .container {
+        max-width: 1200px;
+        width: 100%;
+        margin: 0 auto;
+      }
+
+      .header-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 14px 18px;
+      }
+
+      .header-left {
+        min-width: 0;
+      }
+
+      .header-right {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+
+      .header-link {
+        color: hsl(var(--muted-foreground));
+        font-weight: 500;
+        text-decoration: none;
+      }
+
+      .signup-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 38px;
+        padding: 8px 16px;
+        border-radius: 6px;
+        background: hsl(var(--primary));
+        color: hsl(var(--primary-foreground));
+        font-weight: 500;
+        border: 0;
+      }
+
+      .icon-button,
+      .user-trigger,
+      .search-input,
+      .page-size,
+      .page-link {
+        border: 1px solid hsl(var(--border));
+        background: hsl(var(--card));
+        color: hsl(var(--card-foreground));
+      }
+
+      .icon-button,
+      .user-trigger {
+        width: 40px;
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        cursor: pointer;
+      }
+
+      .page {
+        padding: 18px;
+      }
+
+      .container {
+        display: grid;
+        gap: 18px;
+      }
+
+      .page-head h1 {
+        margin: 0;
+        font-size: 1.5rem;
+        line-height: 1.1;
+        letter-spacing: -0.03em;
+      }
+
+      .page-head p,
+      .table-head p,
+      .card-meta,
+      thead th,
+      .table-footer {
+        color: hsl(var(--muted-foreground));
+      }
+
+      .page-head p {
+        margin: 6px 0 0;
+        font-size: 0.9rem;
+      }
+
+      .metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .metric-card {
+        border: 1px solid hsl(var(--border));
+        padding: 16px;
+      }
+
+      .card-title {
+        font-size: 0.82rem;
+        margin-bottom: 8px;
+      }
+
+      .card-value {
+        font-size: 1.7rem;
+        font-weight: 700;
+        letter-spacing: -0.04em;
+      }
+
+      .card-meta {
+        margin-top: 8px;
+        font-size: 0.8rem;
+      }
+
+      .table-card {
+        border: 1px solid hsl(var(--border));
+        overflow: hidden;
+      }
+
+      .table-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        flex-wrap: wrap;
+        padding: 16px;
+        border-bottom: 1px solid hsl(var(--border));
+      }
+
+      .table-head h2 {
+        margin: 0;
+        font-size: 1rem;
+      }
+
+      .table-head p {
+        margin: 4px 0 0;
+        font-size: 0.84rem;
+      }
+
+      .table-tools {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .search-form {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .search-input,
+      .page-size {
+        height: 38px;
+        padding: 0 12px;
+      }
+
+      .search-input {
+        min-width: 240px;
+      }
+
+      .table-scroll {
+        max-height: calc(100vh - 280px);
+        overflow: auto;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 780px;
+      }
+
+      thead th {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        background: hsl(var(--card));
+        text-align: left;
+        font-size: 0.74rem;
+        font-weight: 500;
+        letter-spacing: 0.04em;
+        padding: 10px 14px;
+        border-bottom: 1px solid hsl(var(--border));
+      }
+
+      tbody td {
+        padding: 8px 14px;
+        border-bottom: 1px solid hsl(var(--border));
+        font-size: 0.88rem;
+        vertical-align: middle;
+      }
+
+      tbody tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .domain-name {
+        font-weight: 600;
+      }
+
+      .numeric {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        padding: 0 8px;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 500;
+      }
+
+      .badge-primary {
+        background: hsl(var(--primary) / 0.1);
+        color: hsl(var(--primary));
+      }
+
+      .table-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+        padding: 14px 16px;
+        border-top: 1px solid hsl(var(--border));
+        font-size: 0.84rem;
+      }
+
+      .pagination {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .page-link {
+        width: 38px;
+        min-height: 38px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+      }
+
+      .page-link[aria-disabled="true"] {
+        opacity: 0.45;
+        pointer-events: none;
+      }
+
+      .theme-icon {
+        width: 18px;
+        height: 18px;
+      }
+
+      .theme-icon.moon {
+        display: none;
+      }
+
+      .dark .theme-icon.sun {
+        display: none;
+      }
+
+      .dark .theme-icon.moon {
+        display: block;
+      }
+
+      details.user-menu {
+        position: relative;
+      }
+
+      .dropdown {
+        position: absolute;
+        right: 0;
+        top: calc(100% + 8px);
+        min-width: 160px;
+        border: 1px solid hsl(var(--border));
+        background: hsl(var(--card));
+        border-radius: 0.75rem;
+        padding: 6px;
+        display: grid;
+        gap: 4px;
+      }
+
+      .dropdown a {
+        min-height: 34px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 0.5rem;
+        color: hsl(var(--muted-foreground));
+      }
+
+      .dropdown a:hover {
+        background: hsl(var(--accent));
+        color: hsl(var(--accent-foreground));
+      }
+
+      @media (max-width: 980px) {
+        .metrics-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 720px) {
+        .header-inner,
+        .page {
+          padding-left: 12px;
+          padding-right: 12px;
+        }
+
+        .header-inner,
+        .header-right {
+          flex-wrap: wrap;
+        }
+
+        .search-input {
+          min-width: 100%;
+        }
+
+        .table-scroll {
+          max-height: none;
+        }
+      }
+    </style>
+  </head>
+  <body class="bg-background">
+    <div class="app-shell">
+      <header class="header bg-background">
+        <div class="header-inner">
+          <div class="header-left">
+            <div class="page-head">
+              <h1>Domain Intelligence</h1>
+              <p class="text-muted-foreground">Daily curated list of expiring domains, ranked by SEO authority.</p>
+            </div>
+          </div>
+          <div class="header-right">
+            {% if current_user.is_authenticated %}
+              <a class="header-link" href="{{ url_for('user_page') }}">My Account</a>
+              <button class="icon-button rounded-md" type="button" id="theme-toggle" aria-label="Toggle theme">
+                <svg class="theme-icon sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="4"></circle>
+                  <path d="M12 2v2.5"></path>
+                  <path d="M12 19.5V22"></path>
+                  <path d="M4.93 4.93l1.77 1.77"></path>
+                  <path d="M17.3 17.3l1.77 1.77"></path>
+                  <path d="M2 12h2.5"></path>
+                  <path d="M19.5 12H22"></path>
+                  <path d="M4.93 19.07l1.77-1.77"></path>
+                  <path d="M17.3 6.7l1.77-1.77"></path>
+                </svg>
+                <svg class="theme-icon moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"></path>
+                </svg>
+              </button>
+              <details class="user-menu">
+                <summary class="user-trigger rounded-md" aria-label="Profile menu">{{ current_user.email[0]|upper }}</summary>
+                <div class="dropdown text-card-foreground">
+                  <a href="{{ url_for('user_page') }}">{{ current_user.email }}</a>
+                  <a href="{{ url_for('logout') }}">Logout</a>
+                </div>
+              </details>
+            {% else %}
+              <a class="header-link" href="{{ url_for('login') }}">Login</a>
+              <a class="signup-button" href="{{ url_for('checkout') }}">Sign Up</a>
+              <button class="icon-button rounded-md" type="button" id="theme-toggle" aria-label="Toggle theme">
+                <svg class="theme-icon sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="4"></circle>
+                  <path d="M12 2v2.5"></path>
+                  <path d="M12 19.5V22"></path>
+                  <path d="M4.93 4.93l1.77 1.77"></path>
+                  <path d="M17.3 17.3l1.77 1.77"></path>
+                  <path d="M2 12h2.5"></path>
+                  <path d="M19.5 12H22"></path>
+                  <path d="M4.93 19.07l1.77-1.77"></path>
+                  <path d="M17.3 6.7l1.77-1.77"></path>
+                </svg>
+                <svg class="theme-icon moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"></path>
+                </svg>
+              </button>
+            {% endif %}
+          </div>
+        </div>
+      </header>
+
+      <main class="page">
+        <div class="container">
+          <section class="metrics-grid">
+            {% for stat in dashboard_stats %}
+              <article class="metric-card bg-card text-card-foreground border-border rounded-xl">
+                <div class="card-title text-muted-foreground">{{ stat.label }}</div>
+                <div class="card-value">{{ stat.value }}</div>
+                <div class="card-meta text-muted-foreground">{{ stat.detail }}</div>
+              </article>
+            {% endfor %}
+          </section>
+
+          <section class="table-card bg-card text-card-foreground border-border rounded-xl" id="opportunities">
+            <div class="table-head">
+              <div>
+                <h2>Active Opportunities</h2>
+                <p class="text-muted-foreground">Showing domains available for the selected release date.</p>
+              </div>
+              <div class="table-tools">
+                <form class="search-form" method="get" action="{{ url_for('index') }}">
+                  <input class="search-input rounded-md" type="search" name="q" value="{{ search_query }}" aria-label="Search domain name">
+                  <select class="page-size rounded-md" name="page_size" aria-label="Rows per page">
+                    <option value="10" {% if page_size == 10 %}selected{% endif %}>10</option>
+                    <option value="25" {% if page_size == 25 %}selected{% endif %}>25</option>
+                    <option value="50" {% if page_size == 50 %}selected{% endif %}>50</option>
+                  </select>
+                  <button class="icon-button rounded-md" type="submit" aria-label="Search">⌕</button>
+                </form>
+              </div>
+            </div>
+
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th class="text-muted-foreground">Domain</th>
+                    <th class="text-muted-foreground">Type</th>
+                    <th class="text-muted-foreground">Status</th>
+                    <th class="numeric text-muted-foreground">DA</th>
+                    <th class="numeric text-muted-foreground">Referring Domains</th>
+                    <th class="text-muted-foreground">Release Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% if domains %}
+                    {% for domain in domains %}
+                      {% set has_metrics = domain.da is not none or domain.linking_root_domains is not none %}
+                      {% set resolved_release = domain.release_date if domain.release_date is defined and domain.release_date is not none else release_date if release_date else 'N/A' %}
+                      <tr>
+                        <td>
+                          <div class="domain-name">{{ domain.domain_name }}</div>
+                        </td>
+                        <td><span class="badge badge-primary">{{ '.se' if domain.domain_name.endswith('.se') else '.nu' }}</span></td>
+                        <td><span class="badge badge-primary">{{ 'Ready' if has_metrics else 'Pending' }}</span></td>
+                        <td class="numeric">{{ domain.da if domain.da is not none else '—' }}</td>
+                        <td class="numeric">{{ domain.linking_root_domains if domain.linking_root_domains is not none else '—' }}</td>
+                        <td>{{ resolved_release }}</td>
+                      </tr>
+                    {% endfor %}
+                  {% else %}
+                    <tr>
+                      <td colspan="6" class="text-muted-foreground" style="padding: 18px 14px; text-align: center;">No results</td>
+                    </tr>
+                  {% endif %}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="table-footer text-muted-foreground">
+              <div>{{ start_index }}-{{ end_index }} / {{ total_filtered }}</div>
+              <div class="pagination">
+                <a class="page-link rounded-md" href="{{ url_for('index', q=search_query, page=page-1, page_size=page_size) }}" aria-disabled="{{ 'true' if page <= 1 else 'false' }}">‹</a>
+                <div>{{ page }} / {{ total_pages }}</div>
+                <a class="page-link rounded-md" href="{{ url_for('index', q=search_query, page=page+1, page_size=page_size) }}" aria-disabled="{{ 'true' if page >= total_pages else 'false' }}">›</a>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <script>
+      (function () {
+        const root = document.documentElement
+        const themeKey = 'theme'
+        const themeToggle = document.getElementById('theme-toggle')
+        const savedTheme = window.localStorage.getItem(themeKey)
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+
+        if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+          root.classList.add('dark')
+        }
+
+        if (themeToggle) {
+          themeToggle.addEventListener('click', function () {
+            root.classList.toggle('dark')
+            window.localStorage.setItem(themeKey, root.classList.contains('dark') ? 'dark' : 'light')
+          })
+        }
+      })()
+    </script>
+  </body>
+</html>
