@@ -946,6 +946,8 @@ def index():
         if any(domain.da is not None or domain.linking_root_domains is not None for domain in domains):
             active_date = current_release_date or today
             using_live_fallback = False
+        highest_authority = max((domain.da or 0) for domain in domains) if domains else 0
+        highest_referring_domains = max((domain.linking_root_domains or 0) for domain in domains) if domains else 0
     else:
         base_query = Domain.query.filter(
             (Domain.release_date == active_date) | ((Domain.release_date.is_(None)) & (Domain.fetch_date == active_date))
@@ -976,11 +978,15 @@ def index():
         hidden_count = max(total_domains - min(total_filtered, 25), 0) if not current_user.is_authenticated or not current_user.is_premium else 0
         if any(domain.da is None and domain.linking_root_domains is None for domain in domains):
             domains = hydrate_visible_domains(domains, active_date)
+        metric_summary = query.with_entities(
+            db.func.max(Domain.da),
+            db.func.max(Domain.linking_root_domains),
+        ).order_by(None).first()
+        highest_authority = metric_summary[0] or 0
+        highest_referring_domains = metric_summary[1] or 0
 
     domains_with_da = [domain.da for domain in domains if domain.da is not None]
     domains_with_links = [domain.linking_root_domains for domain in domains if domain.linking_root_domains is not None]
-    premium_opportunities = sum(1 for domain in domains if (domain.da or 0) >= 20)
-    average_referring_domains = round(sum(domains_with_links) / len(domains_with_links), 1) if domains_with_links else "N/A"
     dashboard_stats = [
         {
             "label": "Total Domains",
@@ -989,13 +995,13 @@ def index():
         },
         {
             "label": "High Authority",
-            "value": premium_opportunities,
-            "detail": "DA 20+",
+            "value": highest_authority,
+            "detail": "Highest DA today",
         },
         {
             "label": "Referring Domains",
-            "value": average_referring_domains,
-            "detail": "Average across list",
+            "value": highest_referring_domains,
+            "detail": "Most links to one domain",
         },
     ]
     start_index = ((page - 1) * page_size) + 1 if total_filtered else 0
