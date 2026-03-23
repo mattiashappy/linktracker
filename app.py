@@ -1035,6 +1035,11 @@ def register():
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    checkout_email = normalize_email(request.args.get("email", ""))
+    checkout_message = None
+    if checkout_email:
+        checkout_message = f"Your Stripe checkout used {checkout_email}. Log in to access premium on that account."
+
     error = None
     if request.method == "POST":
         identifier = request.form.get("email", "").strip()
@@ -1057,9 +1062,10 @@ def login():
         title="Login",
         submit_label="Sign in",
         error=error,
-        description=None,
+        description=checkout_message,
         identifier_label="Email or username",
         identifier_type="text",
+        email_value=checkout_email,
     )
 
 
@@ -1152,54 +1158,6 @@ def checkout():
     if not get_stripe_secret_key() or not price_id:
         abort(500, "Stripe is not configured. Set STRIPE_SECRET_KEY/Secret_key_test and STRIPE_PRICE_ID/STRIPE_PRICE_ID_TEST.")
 
-    error = None
-    email_value = current_user.email if current_user.is_authenticated else request.form.get("email", "").strip()
-    user = current_user if current_user.is_authenticated else None
-    existing_customer_id = None
-
-    if not current_user.is_authenticated and request.method == "GET":
-        return render_template_string(
-            AUTH_TEMPLATE,
-            title="Start Premium Checkout",
-            submit_label="Continue to Stripe",
-            error=None,
-            description="Use your email first so we can ensure every email address maps to only one account and one Stripe customer.",
-            identifier_label="Email",
-            identifier_type="email",
-            show_email_field=True,
-            show_password_field=False,
-            email_value="",
-        )
-
-    if not current_user.is_authenticated:
-        email_value = normalize_email(email_value)
-        if not email_value:
-            error = "Please enter your email address."
-        else:
-            user = get_user_by_email(email_value)
-            if user is not None:
-                error = "An account or payment profile already exists for this email. Please log in to continue."
-            else:
-                existing_customer = get_existing_stripe_customer(email_value)
-                if existing_customer is not None:
-                    existing_customer_id = existing_customer.get("id")
-                    if stripe_customer_has_active_subscription(existing_customer_id):
-                        error = "A Stripe subscription already exists for this email. Please log in to the existing account instead."
-
-    if error:
-        return render_template_string(
-            AUTH_TEMPLATE,
-            title="Start Premium Checkout",
-            submit_label="Continue to Stripe",
-            error=error,
-            description="Use your email first so we can ensure every email address maps to only one account and one Stripe customer.",
-            identifier_label="Email",
-            identifier_type="email",
-            show_email_field=True,
-            show_password_field=False,
-            email_value=email_value,
-        )
-
     checkout_kwargs = {
         "mode": "subscription",
         "line_items": [{"price": price_id, "quantity": 1}],
@@ -1207,17 +1165,13 @@ def checkout():
         "cancel_url": url_for("index", _external=True),
     }
 
-    checkout_email = normalize_email(current_user.email if current_user.is_authenticated else email_value)
-    if user is not None and user.is_authenticated:
-        checkout_kwargs["client_reference_id"] = str(user.id)
-        if user.stripe_customer_id:
-            checkout_kwargs["customer"] = user.stripe_customer_id
+    if current_user.is_authenticated:
+        checkout_email = normalize_email(current_user.email)
+        checkout_kwargs["client_reference_id"] = str(current_user.id)
+        if current_user.stripe_customer_id:
+            checkout_kwargs["customer"] = current_user.stripe_customer_id
         else:
             checkout_kwargs["customer_email"] = checkout_email
-    elif existing_customer_id:
-        checkout_kwargs["customer"] = existing_customer_id
-    else:
-        checkout_kwargs["customer_email"] = checkout_email
 
     try:
         checkout_session = stripe.checkout.Session.create(**checkout_kwargs)
@@ -1288,21 +1242,37 @@ def complete_setup():
     except Exception as e:
         return abort(400, f"Session error: {str(e)}")
 
+    session_customer_id = checkout_session.get("customer")
+    user = get_user_by_email(email)
+    existing_account = bool(user and user.password_hash)
     error = None
+
+    if user is not None and session_customer_id and not user.stripe_customer_id:
+        user.stripe_customer_id = session_customer_id
+        user.is_premium = True
+        db.session.commit()
+    elif user is not None and session_customer_id and user.stripe_customer_id == session_customer_id and not user.is_premium:
+        user.is_premium = True
+        db.session.commit()
+
+    if existing_account:
+        if user.stripe_customer_id and session_customer_id and user.stripe_customer_id != session_customer_id:
+            error = "This email is already linked to a different payment profile. Please log in to the existing account instead."
+        else:
+            return redirect(url_for("login", email=email))
+
     if request.method == "POST":
         password = request.form.get("password", "")
         if not password:
             error = "Please enter a password."
         else:
-            user = get_user_by_email(email)
             if user is None:
                 user = User(email=email)
                 db.session.add(user)
 
-            session_customer_id = checkout_session.get("customer")
             if user.stripe_customer_id and session_customer_id and user.stripe_customer_id != session_customer_id:
                 error = "This email is already linked to a different payment profile. Please log in to the existing account instead."
-                return render_template_string(SETUP_TEMPLATE, email=email, error=error)
+                return render_template_string(SETUP_TEMPLATE, email=email, error=error, existing_account=existing_account)
 
             user.set_password(password)
             user.is_premium = True
@@ -1314,22 +1284,28 @@ def complete_setup():
     SETUP_TEMPLATE = """
     <!doctype html>
     <html lang="en">
-      <head><title>Complete Setup</title><style>body { font-family: Arial; background: #f4f7fb; padding: 32px; } .card { max-width: 420px; margin: 0 auto; background: #fff; padding: 24px; border-radius: 12px; } input { width: 100%; padding: 12px; margin: 8px 0 14px; border: 1px solid #d1d5db; border-radius: 8px; box-sizing: border-box; } button { background: #111827; color: #fff; padding: 12px 16px; border-radius: 8px; border: 0; cursor: pointer; } .error { margin-bottom: 14px; color: #b91c1c; }</style></head>
+      <head><title>Complete Setup</title><style>body { font-family: Arial; background: #f4f7fb; padding: 32px; } .card { max-width: 420px; margin: 0 auto; background: #fff; padding: 24px; border-radius: 12px; } input { width: 100%; padding: 12px; margin: 8px 0 14px; border: 1px solid #d1d5db; border-radius: 8px; box-sizing: border-box; } button, a.button { display: inline-block; background: #111827; color: #fff; padding: 12px 16px; border-radius: 8px; border: 0; cursor: pointer; text-decoration: none; } .error { margin-bottom: 14px; color: #b91c1c; }</style></head>
       <body>
         <div class="card">
           <h1>Welcome!</h1>
-          <p>Your payment was successful. Please set a password for <strong>{{ email }}</strong> to complete your account.</p>
-          {% if error %}<div class="error">{{ error }}</div>{% endif %}
-          <form method="post">
-            <label>Password</label>
-            <input name="password" type="password" required>
-            <button type="submit">Complete Setup</button>
-          </form>
+          {% if existing_account %}
+            <p>Your payment was successful for <strong>{{ email }}</strong>. Log in to your existing account to access premium.</p>
+            {% if error %}<div class="error">{{ error }}</div>{% endif %}
+            <a class="button" href="{{ url_for('login', email=email) }}">Go to Login</a>
+          {% else %}
+            <p>Your payment was successful. Please set a password for <strong>{{ email }}</strong> to complete your account.</p>
+            {% if error %}<div class="error">{{ error }}</div>{% endif %}
+            <form method="post">
+              <label>Password</label>
+              <input name="password" type="password" required>
+              <button type="submit">Complete Setup</button>
+            </form>
+          {% endif %}
         </div>
       </body>
     </html>
     """
-    return render_template_string(SETUP_TEMPLATE, email=email, error=error)
+    return render_template_string(SETUP_TEMPLATE, email=email, error=error, existing_account=existing_account)
 
 
 if __name__ == "__main__":
