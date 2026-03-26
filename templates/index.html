@@ -284,6 +284,18 @@
         padding: 10px 14px;
         border-bottom: 1px solid hsl(var(--border));
       }
+      .sortable {
+        cursor: pointer;
+        user-select: none;
+      }
+      .sortable.active {
+        color: hsl(var(--primary));
+      }
+      .sort-arrow {
+        margin-left: 6px;
+        font-size: 0.8rem;
+        color: hsl(var(--muted-foreground));
+      }
 
       tbody td {
         padding: 8px 14px;
@@ -525,16 +537,16 @@
                   <tr>
                     <th class="text-muted-foreground">Domain</th>
                     <th class="text-muted-foreground">Type</th>
-                    <th class="numeric text-muted-foreground">DA</th>
-                    <th class="numeric text-muted-foreground">Referring Domains</th>
+                    <th id="sort-user-da" class="numeric text-muted-foreground sortable">DA <span class="sort-arrow">↕</span></th>
+                    <th id="sort-user-rd" class="numeric text-muted-foreground sortable">Referring Domains <span class="sort-arrow">↕</span></th>
                     <th class="text-muted-foreground">Release Date</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody id="user-domain-rows">
                   {% if domains %}
                     {% for domain in domains %}
                       {% set resolved_release = domain.release_date if domain.release_date is defined and domain.release_date is not none else release_date if release_date else 'N/A' %}
-                      <tr>
+                      <tr data-da="{{ domain.da if domain.da is not none else '' }}" data-rd="{{ domain.linking_root_domains if domain.linking_root_domains is not none else '' }}">
                         <td>
                           <div class="domain-name">{{ domain.domain_name }}</div>
                         </td>
@@ -583,6 +595,55 @@
             root.classList.toggle('dark')
             window.localStorage.setItem(themeKey, root.classList.contains('dark') ? 'dark' : 'light')
           })
+        }
+
+        const tableBody = document.getElementById('user-domain-rows')
+        const sortDa = document.getElementById('sort-user-da')
+        const sortRd = document.getElementById('sort-user-rd')
+        if (tableBody && sortDa && sortRd) {
+          const rows = Array.from(tableBody.querySelectorAll('tr[data-da]'))
+          let sortKey = null
+          let sortDirection = 'desc'
+
+          function getSortValue(row, key) {
+            const rawValue = row.dataset[key] || ''
+            return rawValue === '' ? -1 : Number(rawValue)
+          }
+
+          function setSortIndicator() {
+            ;[sortDa, sortRd].forEach((header) => {
+              header.classList.remove('active')
+              header.querySelector('.sort-arrow').textContent = '↕'
+            })
+            if (!sortKey) return
+            const activeHeader = sortKey === 'da' ? sortDa : sortRd
+            activeHeader.classList.add('active')
+            activeHeader.querySelector('.sort-arrow').textContent = sortDirection === 'desc' ? '↓' : '↑'
+          }
+
+          function renderRows() {
+            const sortedRows = [...rows].sort((left, right) => {
+              const leftValue = getSortValue(left, sortKey)
+              const rightValue = getSortValue(right, sortKey)
+              if (leftValue === rightValue) return 0
+              return sortDirection === 'desc' ? rightValue - leftValue : leftValue - rightValue
+            })
+            sortedRows.forEach((row) => tableBody.appendChild(row))
+          }
+
+          function toggleSort(key) {
+            if (sortKey === key) {
+              sortDirection = sortDirection === 'desc' ? 'asc' : 'desc'
+            } else {
+              sortKey = key
+              sortDirection = 'desc'
+            }
+            setSortIndicator()
+            renderRows()
+          }
+
+          sortDa.addEventListener('click', () => toggleSort('da'))
+          sortRd.addEventListener('click', () => toggleSort('rd'))
         }
       })()
     </script>
