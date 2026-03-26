@@ -1244,6 +1244,7 @@ def admin():
 
     users = User.query.order_by(User.id.desc()).all()
     domains = Domain.query.order_by(Domain.fetch_date.desc(), Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc()).all()
+    fetch_dates = sorted({row.fetch_date.isoformat() for row in domains if row.fetch_date is not None}, reverse=True)
     total_users = User.query.count()
     premium_users = User.query.filter_by(is_premium=True).count()
     today_domains = Domain.query.filter_by(fetch_date=today).count()
@@ -1251,6 +1252,7 @@ def admin():
         ADMIN_TEMPLATE,
         users=users,
         domains=domains,
+        fetch_dates=fetch_dates,
         total_users=total_users,
         premium_users=premium_users,
         today_domains=today_domains,
