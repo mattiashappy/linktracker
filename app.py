@@ -713,10 +713,18 @@ ADMIN_TEMPLATE = """
       .card { max-width: 1100px; margin: 0 auto; background: rgba(255,255,255,0.92); border: 1px solid #e2e8f0; padding: 28px; border-radius: 24px; box-shadow: 0 24px 80px rgba(15, 23, 42, 0.08); }
       .stats { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
       .stat { background: #f8fafc; border: 1px solid #e2e8f0; padding: 16px; border-radius: 18px; min-width: 180px; }
+      .filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 12px; align-items: end; }
+      .filter-field { display: grid; gap: 6px; }
+      .filter-field label { font-size: 0.85rem; color: #334155; font-weight: 600; }
+      .filter-field input, .filter-field select { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 12px; font: inherit; background: #fff; }
+      .filter-meta { margin-top: 10px; color: #475569; font-size: 0.9rem; }
       table { width: 100%; border-collapse: collapse; margin-top: 16px; overflow: hidden; }
       th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid #e5e7eb; }
       th { background: #f8fafc; color: #0f172a; }
       a.button { display: inline-block; background: #0f172a; color: #fff; padding: 12px 16px; border-radius: 999px; text-decoration: none; margin-right: 12px; }
+      @media (max-width: 900px) {
+        .filters { grid-template-columns: 1fr; }
+      }
     </style>
   </head>
   <body>
@@ -752,9 +760,34 @@ ADMIN_TEMPLATE = """
         <thead>
           <tr><th>Domain</th><th>DA</th><th>Linking Root Domains</th><th>Fetch Date</th></tr>
         </thead>
-        <tbody>
+      </table>
+      <div class="filters">
+        <div class="filter-field">
+          <label for="domain-filter">Search domain</label>
+          <input id="domain-filter" type="search" placeholder="e.g. seo, shop, ai">
+        </div>
+        <div class="filter-field">
+          <label for="date-filter">Fetch date</label>
+          <select id="date-filter">
+            <option value="">All dates</option>
+            {% for fetch_date in fetch_dates %}
+              <option value="{{ fetch_date }}">{{ fetch_date }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="filter-field">
+          <label for="min-da-filter">Minimum DA</label>
+          <input id="min-da-filter" type="number" min="0" max="100" step="1" placeholder="Any">
+        </div>
+      </div>
+      <div class="filter-meta" id="domains-count">{{ domains|length }} domains shown</div>
+      <table>
+        <thead>
+          <tr><th>Domain</th><th>DA</th><th>Linking Root Domains</th><th>Fetch Date</th></tr>
+        </thead>
+        <tbody id="domain-rows">
           {% for domain in domains %}
-            <tr>
+            <tr data-domain="{{ domain.domain_name|lower }}" data-da="{{ domain.da if domain.da is not none else '' }}" data-fetch-date="{{ domain.fetch_date }}">
               <td>{{ domain.domain_name }}</td>
               <td>{{ domain.da if domain.da is not none else 'N/A' }}</td>
               <td>{{ domain.linking_root_domains if domain.linking_root_domains is not none else 'N/A' }}</td>
@@ -764,6 +797,43 @@ ADMIN_TEMPLATE = """
         </tbody>
       </table>
     </div>
+    <script>
+      (function () {
+        const searchInput = document.getElementById('domain-filter')
+        const dateSelect = document.getElementById('date-filter')
+        const minDaInput = document.getElementById('min-da-filter')
+        const rows = Array.from(document.querySelectorAll('#domain-rows tr'))
+        const count = document.getElementById('domains-count')
+
+        function applyFilters() {
+          const term = (searchInput.value || '').trim().toLowerCase()
+          const dateValue = dateSelect.value
+          const minDaRaw = (minDaInput.value || '').trim()
+          const minDa = minDaRaw === '' ? null : Number(minDaRaw)
+          let visible = 0
+
+          rows.forEach((row) => {
+            const domain = row.dataset.domain || ''
+            const fetchDate = row.dataset.fetchDate || ''
+            const daValue = row.dataset.da === '' ? null : Number(row.dataset.da)
+
+            const matchesDomain = term === '' || domain.includes(term)
+            const matchesDate = dateValue === '' || fetchDate === dateValue
+            const matchesDa = minDa === null || (daValue !== null && daValue >= minDa)
+            const show = matchesDomain && matchesDate && matchesDa
+            row.style.display = show ? '' : 'none'
+            if (show) visible += 1
+          })
+
+          count.textContent = `${visible} domain${visible === 1 ? '' : 's'} shown`
+        }
+
+        ;[searchInput, dateSelect, minDaInput].forEach((el) => {
+          el.addEventListener('input', applyFilters)
+          el.addEventListener('change', applyFilters)
+        })
+      })()
+    </script>
   </body>
 </html>
 """
@@ -1134,6 +1204,7 @@ def admin():
 
     users = User.query.order_by(User.id.desc()).all()
     domains = Domain.query.order_by(Domain.fetch_date.desc(), Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc()).all()
+    fetch_dates = sorted({row.fetch_date.isoformat() for row in domains if row.fetch_date is not None}, reverse=True)
     total_users = User.query.count()
     premium_users = User.query.filter_by(is_premium=True).count()
     today_domains = Domain.query.filter_by(fetch_date=today).count()
@@ -1141,6 +1212,7 @@ def admin():
         ADMIN_TEMPLATE,
         users=users,
         domains=domains,
+        fetch_dates=fetch_dates,
         total_users=total_users,
         premium_users=premium_users,
         today_domains=today_domains,
