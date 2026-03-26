@@ -713,11 +713,14 @@ ADMIN_TEMPLATE = """
       .card { max-width: 1100px; margin: 0 auto; background: rgba(255,255,255,0.92); border: 1px solid #e2e8f0; padding: 28px; border-radius: 24px; box-shadow: 0 24px 80px rgba(15, 23, 42, 0.08); }
       .stats { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
       .stat { background: #f8fafc; border: 1px solid #e2e8f0; padding: 16px; border-radius: 18px; min-width: 180px; }
-      .filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 12px; align-items: end; }
+      .filters { display: grid; grid-template-columns: minmax(220px, 320px); gap: 12px; margin-top: 12px; align-items: end; }
       .filter-field { display: grid; gap: 6px; }
       .filter-field label { font-size: 0.85rem; color: #334155; font-weight: 600; }
       .filter-field input, .filter-field select { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 12px; font: inherit; background: #fff; }
       .filter-meta { margin-top: 10px; color: #475569; font-size: 0.9rem; }
+      .sortable { cursor: pointer; user-select: none; }
+      .sortable.active { color: #1d4ed8; }
+      .sort-arrow { margin-left: 6px; font-size: 0.8rem; color: #64748b; }
       table { width: 100%; border-collapse: collapse; margin-top: 16px; overflow: hidden; }
       th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid #e5e7eb; }
       th { background: #f8fafc; color: #0f172a; }
@@ -756,47 +759,29 @@ ADMIN_TEMPLATE = """
         </tbody>
       </table>
       <h2>Latest domains</h2>
-      <table>
-        <thead>
-          <tr><th>Domain</th><th>DA</th><th>Linking Root Domains</th><th>Fetch Date</th></tr>
-        </thead>
-      </table>
       <div class="filters">
-        <div class="filter-field">
-          <label for="domain-filter">Search domain</label>
-          <input id="domain-filter" type="search" placeholder="e.g. seo, shop, ai">
-        </div>
-        <div class="filter-field">
-          <label for="date-filter">Fetch date</label>
-          <select id="date-filter">
-            <option value="">All dates</option>
-            {% for fetch_date in fetch_dates %}
-              <option value="{{ fetch_date }}">{{ fetch_date }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="filter-field">
-          <label for="min-da-filter">Minimum DA</label>
-          <input id="min-da-filter" type="number" min="0" max="100" step="1" placeholder="Any">
-        </div>
         <div class="filter-field">
           <label for="page-size-filter">Rows shown</label>
           <select id="page-size-filter">
             <option value="25">25</option>
             <option value="50">50</option>
             <option value="100">100</option>
-            <option value="all">All</option>
           </select>
         </div>
       </div>
-      <div class="filter-meta" id="domains-count">{{ domains|length }} domains shown</div>
+      <div class="filter-meta" id="domains-count">{{ domains|length }} domains available</div>
       <table>
         <thead>
-          <tr><th>Domain</th><th>DA</th><th>Linking Root Domains</th><th>Fetch Date</th></tr>
+          <tr>
+            <th>Domain</th>
+            <th id="sort-da" class="sortable" data-sort-key="da">DA <span class="sort-arrow">↕</span></th>
+            <th id="sort-lrd" class="sortable" data-sort-key="lrd">Linking Root Domains <span class="sort-arrow">↕</span></th>
+            <th>Fetch Date</th>
+          </tr>
         </thead>
         <tbody id="domain-rows">
           {% for domain in domains %}
-            <tr data-domain="{{ domain.domain_name|lower }}" data-da="{{ domain.da if domain.da is not none else '' }}" data-fetch-date="{{ domain.fetch_date }}">
+            <tr data-da="{{ domain.da if domain.da is not none else '' }}" data-lrd="{{ domain.linking_root_domains if domain.linking_root_domains is not none else '' }}">
               <td>{{ domain.domain_name }}</td>
               <td>{{ domain.da if domain.da is not none else 'N/A' }}</td>
               <td>{{ domain.linking_root_domains if domain.linking_root_domains is not none else 'N/A' }}</td>
@@ -808,48 +793,85 @@ ADMIN_TEMPLATE = """
     </div>
     <script>
       (function () {
-        const searchInput = document.getElementById('domain-filter')
-        const dateSelect = document.getElementById('date-filter')
-        const minDaInput = document.getElementById('min-da-filter')
         const pageSizeSelect = document.getElementById('page-size-filter')
-        const rows = Array.from(document.querySelectorAll('#domain-rows tr'))
+        const tableBody = document.getElementById('domain-rows')
+        const rows = Array.from(tableBody.querySelectorAll('tr'))
         const count = document.getElementById('domains-count')
+        const sortDa = document.getElementById('sort-da')
+        const sortLrd = document.getElementById('sort-lrd')
+        let sortKey = null
+        let sortDirection = 'desc'
 
-        function applyFilters() {
-          const term = (searchInput.value || '').trim().toLowerCase()
-          const dateValue = dateSelect.value
-          const minDaRaw = (minDaInput.value || '').trim()
-          const minDa = minDaRaw === '' ? null : Number(minDaRaw)
-          const pageSizeValue = pageSizeSelect.value
-          const pageSize = pageSizeValue === 'all' ? Number.POSITIVE_INFINITY : Number(pageSizeValue)
-          let shown = 0
-          let matching = 0
-
-          rows.forEach((row) => {
-            const domain = row.dataset.domain || ''
-            const fetchDate = row.dataset.fetchDate || ''
-            const daValue = row.dataset.da === '' ? null : Number(row.dataset.da)
-
-            const matchesDomain = term === '' || domain.includes(term)
-            const matchesDate = dateValue === '' || fetchDate === dateValue
-            const matchesDa = minDa === null || (daValue !== null && daValue >= minDa)
-            const matches = matchesDomain && matchesDate && matchesDa
-            if (matches) {
-              matching += 1
-            }
-            const show = matches && shown < pageSize
-            row.style.display = show ? '' : 'none'
-            if (show) shown += 1
-          })
-
-          count.textContent = `${shown} of ${matching} matching domain${matching === 1 ? '' : 's'} shown`
+        function getSortValue(row, key) {
+          if (key === 'da') {
+            return row.dataset.da === '' ? -1 : Number(row.dataset.da)
+          }
+          if (key === 'lrd') {
+            return row.dataset.lrd === '' ? -1 : Number(row.dataset.lrd)
+          }
+          return 0
         }
 
-        ;[searchInput, dateSelect, minDaInput, pageSizeSelect].forEach((el) => {
-          el.addEventListener('input', applyFilters)
-          el.addEventListener('change', applyFilters)
-        })
-        applyFilters()
+        function setSortIndicator() {
+          ;[sortDa, sortLrd].forEach((header) => {
+            header.classList.remove('active')
+            header.querySelector('.sort-arrow').textContent = '↕'
+          })
+          if (!sortKey) {
+            return
+          }
+          const activeHeader = sortKey === 'da' ? sortDa : sortLrd
+          activeHeader.classList.add('active')
+          activeHeader.querySelector('.sort-arrow').textContent = sortDirection === 'desc' ? '↓' : '↑'
+        }
+
+        function renderRows() {
+          const sortedRows = [...rows]
+          if (sortKey) {
+            sortedRows.sort((a, b) => {
+              const aValue = getSortValue(a, sortKey)
+              const bValue = getSortValue(b, sortKey)
+              if (aValue === bValue) {
+                return 0
+              }
+              if (sortDirection == 'desc') {
+                return bValue - aValue
+              }
+              return aValue - bValue
+            })
+          }
+
+          const pageSize = Number(pageSizeSelect.value)
+          sortedRows.forEach((row, index) => {
+            row.style.display = index < pageSize ? '' : 'none'
+            tableBody.appendChild(row)
+          })
+          const shown = Math.min(pageSize, rows.length)
+          if (sortKey) {
+            const sortLabel = sortKey === 'da' ? 'DA' : 'Linking Root Domains'
+            count.textContent = `Showing ${shown} of ${rows.length} domains (sorted by ${sortLabel} ${sortDirection.toUpperCase()})`
+          } else {
+            count.textContent = `Showing ${shown} of ${rows.length} domains`
+          }
+        }
+
+        function toggleSort(key) {
+          if (sortKey === key) {
+            sortDirection = sortDirection === 'desc' ? 'asc' : 'desc'
+          } else {
+            sortKey = key
+            sortDirection = 'desc'
+          }
+          setSortIndicator()
+          renderRows()
+        }
+
+        pageSizeSelect.addEventListener('change', renderRows)
+        sortDa.addEventListener('click', () => toggleSort('da'))
+        sortLrd.addEventListener('click', () => toggleSort('lrd'))
+
+        setSortIndicator()
+        renderRows()
       })()
     </script>
   </body>
