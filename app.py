@@ -713,7 +713,7 @@ ADMIN_TEMPLATE = """
       .card { max-width: 1100px; margin: 0 auto; background: rgba(255,255,255,0.92); border: 1px solid #e2e8f0; padding: 28px; border-radius: 24px; box-shadow: 0 24px 80px rgba(15, 23, 42, 0.08); }
       .stats { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
       .stat { background: #f8fafc; border: 1px solid #e2e8f0; padding: 16px; border-radius: 18px; min-width: 180px; }
-      .filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 12px; align-items: end; }
+      .filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 12px; align-items: end; }
       .filter-field { display: grid; gap: 6px; }
       .filter-field label { font-size: 0.85rem; color: #334155; font-weight: 600; }
       .filter-field input, .filter-field select { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 12px; font: inherit; background: #fff; }
@@ -779,6 +779,15 @@ ADMIN_TEMPLATE = """
           <label for="min-da-filter">Minimum DA</label>
           <input id="min-da-filter" type="number" min="0" max="100" step="1" placeholder="Any">
         </div>
+        <div class="filter-field">
+          <label for="page-size-filter">Rows shown</label>
+          <select id="page-size-filter">
+            <option value="25">25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="all">All</option>
+          </select>
+        </div>
       </div>
       <div class="filter-meta" id="domains-count">{{ domains|length }} domains shown</div>
       <table>
@@ -802,6 +811,7 @@ ADMIN_TEMPLATE = """
         const searchInput = document.getElementById('domain-filter')
         const dateSelect = document.getElementById('date-filter')
         const minDaInput = document.getElementById('min-da-filter')
+        const pageSizeSelect = document.getElementById('page-size-filter')
         const rows = Array.from(document.querySelectorAll('#domain-rows tr'))
         const count = document.getElementById('domains-count')
 
@@ -810,7 +820,10 @@ ADMIN_TEMPLATE = """
           const dateValue = dateSelect.value
           const minDaRaw = (minDaInput.value || '').trim()
           const minDa = minDaRaw === '' ? null : Number(minDaRaw)
-          let visible = 0
+          const pageSizeValue = pageSizeSelect.value
+          const pageSize = pageSizeValue === 'all' ? Number.POSITIVE_INFINITY : Number(pageSizeValue)
+          let shown = 0
+          let matching = 0
 
           rows.forEach((row) => {
             const domain = row.dataset.domain || ''
@@ -820,18 +833,23 @@ ADMIN_TEMPLATE = """
             const matchesDomain = term === '' || domain.includes(term)
             const matchesDate = dateValue === '' || fetchDate === dateValue
             const matchesDa = minDa === null || (daValue !== null && daValue >= minDa)
-            const show = matchesDomain && matchesDate && matchesDa
+            const matches = matchesDomain && matchesDate && matchesDa
+            if (matches) {
+              matching += 1
+            }
+            const show = matches && shown < pageSize
             row.style.display = show ? '' : 'none'
-            if (show) visible += 1
+            if (show) shown += 1
           })
 
-          count.textContent = `${visible} domain${visible === 1 ? '' : 's'} shown`
+          count.textContent = `${shown} of ${matching} matching domain${matching === 1 ? '' : 's'} shown`
         }
 
-        ;[searchInput, dateSelect, minDaInput].forEach((el) => {
+        ;[searchInput, dateSelect, minDaInput, pageSizeSelect].forEach((el) => {
           el.addEventListener('input', applyFilters)
           el.addEventListener('change', applyFilters)
         })
+        applyFilters()
       })()
     </script>
   </body>
