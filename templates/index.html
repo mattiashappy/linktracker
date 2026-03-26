@@ -104,6 +104,11 @@
       .header-left {
         min-width: 0;
       }
+      .brand-logo {
+        display: block;
+        width: min(460px, 92vw);
+        height: auto;
+      }
 
       .header-right {
         display: flex;
@@ -428,7 +433,7 @@
         <div class="header-inner">
           <div class="header-left">
             <div class="page-head">
-              <h1>Domain Intelligence</h1>
+              <img class="brand-logo" src="{{ url_for('static', filename='linkinfo-logo.svg') }}" alt="Linkinfo.se">
               <p class="text-muted-foreground">Daily curated list of expiring domains, ranked by SEO authority.</p>
             </div>
           </div>
@@ -520,7 +525,6 @@
                   <tr>
                     <th class="text-muted-foreground">Domain</th>
                     <th class="text-muted-foreground">Type</th>
-                    <th class="text-muted-foreground">Status</th>
                     <th class="numeric text-muted-foreground">DA</th>
                     <th class="numeric text-muted-foreground">Referring Domains</th>
                     <th class="text-muted-foreground">Release Date</th>
@@ -529,14 +533,12 @@
                 <tbody>
                   {% if domains %}
                     {% for domain in domains %}
-                      {% set has_metrics = domain.da is not none or domain.linking_root_domains is not none %}
                       {% set resolved_release = domain.release_date if domain.release_date is defined and domain.release_date is not none else release_date if release_date else 'N/A' %}
                       <tr>
                         <td>
                           <div class="domain-name">{{ domain.domain_name }}</div>
                         </td>
                         <td><span class="badge badge-primary">{{ '.se' if domain.domain_name.endswith('.se') else '.nu' }}</span></td>
-                        <td><span class="badge badge-primary">{{ 'Ready' if has_metrics else 'Pending' }}</span></td>
                         <td class="numeric">{{ domain.da if domain.da is not none else '—' }}</td>
                         <td class="numeric">{{ domain.linking_root_domains if domain.linking_root_domains is not none else '—' }}</td>
                         <td>{{ resolved_release }}</td>
@@ -544,7 +546,7 @@
                     {% endfor %}
                   {% else %}
                     <tr>
-                      <td colspan="6" class="text-muted-foreground" style="padding: 18px 14px; text-align: center;">No results</td>
+                      <td colspan="5" class="text-muted-foreground" style="padding: 18px 14px; text-align: center;">No results</td>
                     </tr>
                   {% endif %}
                 </tbody>
