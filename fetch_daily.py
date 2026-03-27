@@ -1,54 +1,19 @@
 import os
-import re
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 import requests
-from bs4 import BeautifulSoup
 from requests.auth import HTTPBasicAuth
 
-from app import app, ensure_database_schema, fetch_release_date
+from app import app, ensure_database_schema, fetch_release_date, scrape_domains
 from models import Domain, db
 
-SOURCE_URL = "https://www.rymdweb.com/domain/snapback/?action=date"
 MOZ_API_URL = "https://lsapi.seomoz.com/v2/url_metrics"
 REQUEST_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
     "Accept-Language": "en-US,en;q=0.9,sv;q=0.8",
 }
-DOMAIN_PATTERN = re.compile(r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:se|nu)\b", re.IGNORECASE)
-
-
-def scrape_domains(limit: Optional[int] = None) -> List[str]:
-    response = requests.get(SOURCE_URL, headers=REQUEST_HEADERS, timeout=20)
-    response.raise_for_status()
-
-    soup = BeautifulSoup(response.text, "html.parser")
-    extracted: List[str] = []
-    seen = set()
-
-    for selector in ("table td", "table th", "tbody td", "a", "tr"):
-        for element in soup.select(selector):
-            text = " ".join(element.stripped_strings)
-            for match in DOMAIN_PATTERN.findall(text):
-                domain = match.lower().strip()
-                if domain not in seen:
-                    seen.add(domain)
-                    extracted.append(domain)
-                    if limit and len(extracted) >= limit:
-                        return extracted
-
-    page_text = soup.get_text(" ", strip=True)
-    for match in DOMAIN_PATTERN.findall(page_text):
-        domain = match.lower().strip()
-        if domain not in seen:
-            seen.add(domain)
-            extracted.append(domain)
-            if limit and len(extracted) >= limit:
-                break
-
-    return extracted
 
 
 
