@@ -139,24 +139,34 @@ def refresh_daily_domains() -> None:
         print(f"Date parse failed: {e}. Using today's date.")
         release_date_value = today
 
-    # 2. Scrape EXACTLY 25 domains
-    print("Scraping top 25 domains...")
-    domains = scrape_domains(limit=25)
+    # 2. Scrape all available domains from the official feeds
+    print("Scraping all available domains...")
+    domains = scrape_domains()
 
     if not domains:
         print("No domains found. Aborting.")
         return
 
-    # 3. Fetch metrics for those 25 (Safe from 400 error now)
+    # 3. Fetch metrics for a limited subset to avoid oversized Moz requests
+    metric_targets = domains[:25]
+    metrics_by_domain: Dict[str, Dict[str, Any]] = {}
     try:
-        print(f"Fetching Moz metrics for {len(domains)} domains...")
-        all_metrics = fetch_moz_metrics(domains)
+        print(f"Fetching Moz metrics for {len(metric_targets)} domains...")
+        metrics_by_domain = {
+            item["domain_name"]: item
+            for item in fetch_moz_metrics(metric_targets)
+        }
     except Exception as e:
         print(f"Moz API Error: {e}. Saving domains without metrics.")
-        all_metrics = [
-            {"domain_name": d, "da": None, "linking_root_domains": None}
-            for d in domains
-        ]
+
+    all_metrics = [
+        {
+            "domain_name": domain,
+            "da": metrics_by_domain.get(domain, {}).get("da"),
+            "linking_root_domains": metrics_by_domain.get(domain, {}).get("linking_root_domains"),
+        }
+        for domain in domains
+    ]
 
     # 4. Save to Database
     with app.app_context():
