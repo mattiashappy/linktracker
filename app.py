@@ -1,5 +1,5 @@
 import os
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import requests
@@ -63,7 +63,7 @@ stripe.api_key = get_stripe_secret_key()
 
 
 def fetch_release_date():
-    return datetime.now(timezone.utc).date().isoformat()
+    return (datetime.now(timezone.utc).date() + timedelta(days=1)).isoformat()
 
 
 def normalize_scraped_domain(value: str, suffix: str):
