@@ -625,7 +625,6 @@
             <div class="premium-upsell-actions">
               {% if not current_user.is_authenticated or not current_user.is_premium %}
                 <a class="signup-button" href="{{ url_for('checkout') }}">Upgrade to Premium</a>
-                <a class="page-link rounded-md" href="{{ url_for('login') }}">Login</a>
               {% else %}
                 <a class="page-link rounded-md" href="{{ url_for('user_page') }}">Manage subscription</a>
               {% endif %}
