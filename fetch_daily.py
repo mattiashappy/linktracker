@@ -6,96 +6,14 @@ from urllib.parse import urlparse
 import requests
 from requests.auth import HTTPBasicAuth
 
-from app import app, ensure_database_schema, fetch_release_date
+from app import app, ensure_database_schema, fetch_release_date, scrape_domains
 from models import Domain, db
 
-SE_DOMAINS_JSON_URL = "https://data.internetstiftelsen.se/bardate_domains.json"
-SE_DOMAINS_TEXT_URL = "https://data.internetstiftelsen.se/bardate_domains.txt"
-NU_DOMAINS_JSON_URL = "https://data.internetstiftelsen.se/bardate_domains_nu.json"
-NU_DOMAINS_TEXT_URL = "https://data.internetstiftelsen.se/bardate_domains_nu.txt"
 MOZ_API_URL = "https://lsapi.seomoz.com/v2/url_metrics"
 REQUEST_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
     "Accept-Language": "en-US,en;q=0.9,sv;q=0.8",
 }
-
-
-def normalize_scraped_domain(value: str, suffix: str) -> Optional[str]:
-    normalized = value.strip().lower().strip(".")
-    if normalized.startswith(("http://", "https://")):
-        normalized = normalized.split("://", 1)[1]
-    normalized = normalized.strip("/")
-    if normalized.startswith("www."):
-        normalized = normalized[4:]
-    if not normalized.endswith(suffix):
-        return None
-    return normalized
-
-
-def extract_domains_from_payload(payload: Any, suffix: str) -> List[str]:
-    domains: List[str] = []
-    queue = [payload]
-    seen_values = set()
-
-    while queue:
-        current = queue.pop(0)
-        if isinstance(current, list):
-            queue.extend(current)
-            continue
-        if isinstance(current, dict):
-            queue.extend(current.values())
-            continue
-        if not isinstance(current, str):
-            continue
-
-        normalized = normalize_scraped_domain(current, suffix)
-        if normalized and normalized not in seen_values:
-            seen_values.add(normalized)
-            domains.append(normalized)
-
-    return domains
-
-
-def scrape_domains(limit: Optional[int] = None) -> List[str]:
-    sources = (
-        (SE_DOMAINS_JSON_URL, ".se", "json"),
-        (NU_DOMAINS_JSON_URL, ".nu", "json"),
-        (SE_DOMAINS_TEXT_URL, ".se", "text"),
-        (NU_DOMAINS_TEXT_URL, ".nu", "text"),
-    )
-
-    extracted: List[str] = []
-    seen = set()
-    errors = []
-
-    for url, suffix, source_type in sources:
-        try:
-            response = requests.get(url, headers=REQUEST_HEADERS, timeout=20)
-            response.raise_for_status()
-            if source_type == "json":
-                candidates = extract_domains_from_payload(response.json(), suffix)
-            else:
-                candidates = [
-                    normalized
-                    for normalized in (normalize_scraped_domain(line, suffix) for line in response.text.splitlines())
-                    if normalized
-                ]
-        except Exception as exc:
-            errors.append(f"{url}: {exc}")
-            continue
-
-        for domain in candidates:
-            if domain in seen:
-                continue
-            seen.add(domain)
-            extracted.append(domain)
-            if limit and len(extracted) >= limit:
-                return extracted
-
-    if not extracted and errors:
-        raise RuntimeError("Could not fetch domains from Internetstiftelsen sources: " + "; ".join(errors))
-
-    return extracted
 
 
 

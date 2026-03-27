@@ -11,9 +11,7 @@ from requests.auth import HTTPBasicAuth
 from models import Domain, User, db
 
 SE_DOMAINS_JSON_URL = "https://data.internetstiftelsen.se/bardate_domains.json"
-SE_DOMAINS_TEXT_URL = "https://data.internetstiftelsen.se/bardate_domains.txt"
 NU_DOMAINS_JSON_URL = "https://data.internetstiftelsen.se/bardate_domains_nu.json"
-NU_DOMAINS_TEXT_URL = "https://data.internetstiftelsen.se/bardate_domains_nu.txt"
 MOZ_API_URL = "https://lsapi.seomoz.com/v2/url_metrics"
 REQUEST_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
@@ -107,28 +105,19 @@ def extract_domains_from_payload(payload, suffix: str):
 
 def scrape_domains(limit: int | None = None):
     sources = (
-        (SE_DOMAINS_JSON_URL, ".se", "json"),
-        (NU_DOMAINS_JSON_URL, ".nu", "json"),
-        (SE_DOMAINS_TEXT_URL, ".se", "text"),
-        (NU_DOMAINS_TEXT_URL, ".nu", "text"),
+        (SE_DOMAINS_JSON_URL, ".se"),
+        (NU_DOMAINS_JSON_URL, ".nu"),
     )
 
     extracted = []
     seen = set()
     errors = []
 
-    for url, suffix, source_type in sources:
+    for url, suffix in sources:
         try:
             response = requests.get(url, headers=REQUEST_HEADERS, timeout=20)
             response.raise_for_status()
-            if source_type == "json":
-                candidates = extract_domains_from_payload(response.json(), suffix)
-            else:
-                candidates = [
-                    normalized
-                    for normalized in (normalize_scraped_domain(line, suffix) for line in response.text.splitlines())
-                    if normalized
-                ]
+            candidates = extract_domains_from_payload(response.json(), suffix)
         except Exception as exc:
             errors.append(f"{url}: {exc}")
             continue
