@@ -342,6 +342,40 @@
         border-top: 1px solid hsl(var(--border));
         font-size: 0.84rem;
       }
+      .premium-upsell {
+        border: 1px solid hsl(var(--border));
+        padding: 18px;
+        display: grid;
+        gap: 14px;
+      }
+      .premium-upsell-head h3 {
+        margin: 0;
+        font-size: 1.1rem;
+        letter-spacing: -0.01em;
+      }
+      .premium-upsell-head p {
+        margin: 8px 0 0;
+        font-size: 0.92rem;
+        color: hsl(var(--muted-foreground));
+      }
+      .premium-upgrade-list {
+        margin: 0;
+        padding-left: 18px;
+        display: grid;
+        gap: 6px;
+        color: hsl(var(--muted-foreground));
+        font-size: 0.9rem;
+      }
+      .premium-upsell-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .premium-note {
+        margin: 0;
+        font-size: 0.8rem;
+        color: hsl(var(--muted-foreground));
+      }
 
       .pagination {
         display: flex;
@@ -520,13 +554,13 @@
               </div>
               <div class="table-tools">
                 <form class="search-form" method="get" action="{{ url_for('index') }}">
-                  <input class="search-input rounded-md" type="search" name="q" value="{{ search_query }}" aria-label="Search domain name">
+                  <input type="hidden" name="q" value="{{ search_query }}">
                   <select class="page-size rounded-md" name="page_size" aria-label="Rows per page">
                     <option value="10" {% if page_size == 10 %}selected{% endif %}>10</option>
                     <option value="25" {% if page_size == 25 %}selected{% endif %}>25</option>
                     <option value="50" {% if page_size == 50 %}selected{% endif %}>50</option>
                   </select>
-                  <button class="icon-button rounded-md" type="submit" aria-label="Search">⌕</button>
+                  <button class="icon-button rounded-md" type="submit" aria-label="Apply page size">↻</button>
                 </form>
               </div>
             </div>
@@ -573,6 +607,31 @@
                 <a class="page-link rounded-md" href="{{ url_for('index', q=search_query, page=page+1, page_size=page_size) }}" aria-disabled="{{ 'true' if page >= total_pages else 'false' }}">›</a>
               </div>
             </div>
+          </section>
+          <section class="premium-upsell bg-card text-card-foreground rounded-xl">
+            <div class="premium-upsell-head">
+              <h3>Premium Membership</h3>
+              {% if current_user.is_authenticated and current_user.is_premium %}
+                <p>You are on Premium and can view the full list of available domains.</p>
+              {% else %}
+                <p>Upgrade to Premium to unlock the full domain list and deeper discovery tools.</p>
+              {% endif %}
+            </div>
+            <ul class="premium-upgrade-list">
+              <li>Access all domains without the free plan limit.</li>
+              <li>See full opportunities beyond the currently visible rows.</li>
+              <li>Keep your account synced with Stripe billing and upgrades.</li>
+            </ul>
+            <div class="premium-upsell-actions">
+              {% if not current_user.is_authenticated or not current_user.is_premium %}
+                <a class="signup-button" href="{{ url_for('checkout') }}">Upgrade to Premium</a>
+              {% else %}
+                <a class="page-link rounded-md" href="{{ url_for('user_page') }}">Manage subscription</a>
+              {% endif %}
+            </div>
+            {% if hidden_count > 0 and (not current_user.is_authenticated or not current_user.is_premium) %}
+              <p class="premium-note">{{ hidden_count }} additional domains are currently hidden behind Premium.</p>
+            {% endif %}
           </section>
         </div>
       </main>
