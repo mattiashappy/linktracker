@@ -554,13 +554,13 @@
               </div>
               <div class="table-tools">
                 <form class="search-form" method="get" action="{{ url_for('index') }}">
-                  <input class="search-input rounded-md" type="search" name="q" value="{{ search_query }}" aria-label="Search domain name">
+                  <input type="hidden" name="q" value="{{ search_query }}">
                   <select class="page-size rounded-md" name="page_size" aria-label="Rows per page">
                     <option value="10" {% if page_size == 10 %}selected{% endif %}>10</option>
                     <option value="25" {% if page_size == 25 %}selected{% endif %}>25</option>
                     <option value="50" {% if page_size == 50 %}selected{% endif %}>50</option>
                   </select>
-                  <button class="icon-button rounded-md" type="submit" aria-label="Search">⌕</button>
+                  <button class="icon-button rounded-md" type="submit" aria-label="Apply page size">↻</button>
                 </form>
               </div>
             </div>
