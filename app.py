@@ -1,25 +1,27 @@
 import os
-import re
-from datetime import date, datetime, timezone
+from collections import deque
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import requests
 import stripe
-from bs4 import BeautifulSoup
 from flask import Flask, abort, redirect, render_template, render_template_string, request, session, url_for
 from flask_login import LoginManager, current_user, login_required, login_user, logout_user
 from requests.auth import HTTPBasicAuth
 
 from models import Domain, User, db
 
-SOURCE_URL = "https://www.rymdweb.com/domain/snapback/?action=date"
+SE_DOMAINS_JSON_URL = "https://data.internetstiftelsen.se/bardate_domains.json"
+NU_DOMAINS_JSON_URL = "https://data.internetstiftelsen.se/bardate_domains_nu.json"
 MOZ_API_URL = "https://lsapi.seomoz.com/v2/url_metrics"
 REQUEST_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
     "Accept-Language": "en-US,en;q=0.9,sv;q=0.8",
 }
-DOMAIN_PATTERN = re.compile(r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:se|nu)\b", re.IGNORECASE)
-RELEASE_DATE_PATTERN = re.compile(r"Domäner som släpps\s+(\d{4}-\d{2}-\d{2})", re.IGNORECASE)
+FEED_CACHE_TTL = timedelta(minutes=15)
+RELEASE_DOMAINS_CACHE = {}
+DOMAIN_AVAILABILITY_CACHE = {}
+DOMAIN_AVAILABILITY_CACHE_TTL = timedelta(minutes=30)
 
 
 def normalize_database_url(database_url: str) -> str:
@@ -66,49 +68,146 @@ stripe.api_key = get_stripe_secret_key()
 
 
 def fetch_release_date():
-    response = requests.get(SOURCE_URL, headers=REQUEST_HEADERS, timeout=20)
-    response.raise_for_status()
-
-    text = response.text
-    match = RELEASE_DATE_PATTERN.search(text)
-    if match:
-        return match.group(1)
-
-    soup = BeautifulSoup(text, "html.parser")
-    page_text = soup.get_text(" ", strip=True)
-    match = RELEASE_DATE_PATTERN.search(page_text)
-    return match.group(1) if match else None
+    return (datetime.now(timezone.utc).date() + timedelta(days=1)).isoformat()
 
 
-def scrape_domains(limit: int | None = None):
-    response = requests.get(SOURCE_URL, headers=REQUEST_HEADERS, timeout=20)
-    response.raise_for_status()
+def normalize_scraped_domain(value: str, suffix: str):
+    normalized = value.strip().lower().strip(".")
+    if normalized.startswith(("http://", "https://")):
+        normalized = normalized.split("://", 1)[1]
+    normalized = normalized.strip("/")
+    if normalized.startswith("www."):
+        normalized = normalized[4:]
+    if not normalized.endswith(suffix):
+        return None
+    return normalized
 
-    soup = BeautifulSoup(response.text, "html.parser")
+
+def extract_domains_from_payload(payload, suffix: str):
+    records = []
+    queue = deque([payload])
+
+    while queue:
+        current = queue.popleft()
+        if isinstance(current, list):
+            queue.extend(current)
+            continue
+        if isinstance(current, dict):
+            candidate_name = current.get("name") or current.get("domain") or current.get("domain_name")
+            if isinstance(candidate_name, str):
+                normalized = normalize_scraped_domain(candidate_name, suffix)
+                if normalized:
+                    records.append(
+                        {
+                            "domain_name": normalized,
+                            "release_at": str(current.get("release_at") or "").strip() or None,
+                        }
+                    )
+            for value in current.values():
+                if isinstance(value, (list, dict)):
+                    queue.append(value)
+            continue
+
+    return records
+
+
+def scrape_domains(limit: int | None = None, release_date: str | None = None):
+    sources = (
+        (SE_DOMAINS_JSON_URL, ".se"),
+        (NU_DOMAINS_JSON_URL, ".nu"),
+    )
+
     extracted = []
     seen = set()
+    errors = []
 
-    for selector in ("table td", "table th", "tbody td", "a", "tr"):
-        for element in soup.select(selector):
-            text = " ".join(element.stripped_strings)
-            for match in DOMAIN_PATTERN.findall(text):
-                domain = match.lower().strip()
-                if domain not in seen:
-                    seen.add(domain)
-                    extracted.append(domain)
-                    if limit and len(extracted) >= limit:
-                        return extracted
+    for url, suffix in sources:
+        try:
+            response = requests.get(url, headers=REQUEST_HEADERS, timeout=20)
+            response.raise_for_status()
+            records = extract_domains_from_payload(response.json(), suffix)
+        except Exception as exc:
+            errors.append(f"{url}: {exc}")
+            continue
 
-    page_text = soup.get_text(" ", strip=True)
-    for match in DOMAIN_PATTERN.findall(page_text):
-        domain = match.lower().strip()
-        if domain not in seen:
+        for record in records:
+            domain = record["domain_name"]
+            domain_release = record.get("release_at")
+            if release_date and domain_release != release_date:
+                continue
+            if domain in seen:
+                continue
             seen.add(domain)
             extracted.append(domain)
             if limit and len(extracted) >= limit:
-                break
+                return extracted
+
+    if not extracted and errors:
+        raise RuntimeError("Could not fetch domains from Internetstiftelsen sources: " + "; ".join(errors))
 
     return extracted
+
+
+def get_release_domains_cached(release_date: str):
+    now = datetime.now(timezone.utc)
+    cached = RELEASE_DOMAINS_CACHE.get(release_date)
+    if cached and now - cached["fetched_at"] <= FEED_CACHE_TTL:
+        return cached["domains"]
+
+    domains = scrape_domains(release_date=release_date)
+    RELEASE_DOMAINS_CACHE[release_date] = {
+        "fetched_at": now,
+        "domains": domains,
+    }
+    return domains
+
+
+
+def isDomainAvailable(name: str) -> bool:
+    fastly_key = (os.environ.get("FASTLY") or "").strip()
+    if not fastly_key:
+        raise RuntimeError("Missing FASTLY API key in environment.")
+
+    domain = (name or "").strip().lower()
+    if not domain:
+        return False
+
+    response = requests.get(
+        "https://api.fastly.com/domain-management/v1/domain-research/status",
+        params={"domain": domain},
+        headers={"Fastly-Key": fastly_key, "Accept": "application/json"},
+        timeout=10,
+    )
+    response.raise_for_status()
+
+    status = str((response.json() or {}).get("status", "")).lower()
+    if "inactive" in status:
+        return True
+    if "delegated" in status or "registered" in status:
+        return False
+    return False
+
+
+def get_domain_availability_status(name: str) -> str:
+    domain = (name or "").strip().lower()
+    if not domain:
+        return "Unknown"
+
+    now = datetime.now(timezone.utc)
+    cached = DOMAIN_AVAILABILITY_CACHE.get(domain)
+    if cached and now - cached["checked_at"] <= DOMAIN_AVAILABILITY_CACHE_TTL:
+        return cached["status"]
+
+    try:
+        status = "Available" if isDomainAvailable(domain) else "Taken"
+    except Exception:
+        status = "Unknown"
+
+    DOMAIN_AVAILABILITY_CACHE[domain] = {
+        "checked_at": now,
+        "status": status,
+    }
+    return status
 
 
 
@@ -247,6 +346,39 @@ def hydrate_visible_domains(domains, fetch_date):
 
 
 
+
+
+def hydrate_domains_from_database(domains, active_date):
+    if not domains or active_date is None:
+        return domains
+
+    names = [domain.domain_name for domain in domains if getattr(domain, "domain_name", None)]
+    if not names:
+        return domains
+
+    rows = (
+        Domain.query.filter(
+            Domain.domain_name.in_(names),
+            (Domain.release_date == active_date) | ((Domain.release_date.is_(None)) & (Domain.fetch_date == active_date)),
+        )
+        .order_by(Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc())
+        .all()
+    )
+    rows_by_domain = {}
+    for row in rows:
+        if row.domain_name not in rows_by_domain:
+            rows_by_domain[row.domain_name] = row
+
+    for domain in domains:
+        cached = rows_by_domain.get(domain.domain_name)
+        if cached is None:
+            continue
+        if getattr(domain, "da", None) is None:
+            domain.da = cached.da
+        if getattr(domain, "linking_root_domains", None) is None:
+            domain.linking_root_domains = cached.linking_root_domains
+
+    return domains
 
 
 def ensure_today_domain_snapshot(scraped_domains, visible_domains, fetch_date, release_date_value):
@@ -502,6 +634,35 @@ USER_TEMPLATE = """
         flex-wrap: wrap;
         margin-top: 18px;
       }
+      .password-form {
+        margin-top: 20px;
+        border-top: 1px solid hsl(var(--border));
+        padding-top: 16px;
+        display: grid;
+        gap: 10px;
+      }
+      .password-form h3 {
+        margin: 0;
+        font-size: 0.98rem;
+      }
+      .password-form label {
+        font-size: 0.82rem;
+        color: hsl(var(--muted-foreground));
+      }
+      .password-form input {
+        width: 100%;
+        min-height: 38px;
+        padding: 8px 10px;
+        border-radius: 0.5rem;
+        border: 1px solid hsl(var(--border));
+        background: hsl(var(--card));
+        color: hsl(var(--card-foreground));
+      }
+      .form-message {
+        font-size: 0.85rem;
+      }
+      .form-message.error { color: #dc2626; }
+      .form-message.success { color: #16a34a; }
       .theme-icon {
         width: 18px;
         height: 18px;
@@ -596,24 +757,6 @@ USER_TEMPLATE = """
 
       <main class="page">
         <div class="container">
-          <section class="metrics-grid">
-            <article class="metric-card bg-card text-card-foreground border-border rounded-xl">
-              <div class="card-title text-muted-foreground">Email</div>
-              <div class="card-value">{{ user.email }}</div>
-              <div class="card-meta text-muted-foreground">Primary account identity</div>
-            </article>
-            <article class="metric-card bg-card text-card-foreground border-border rounded-xl">
-              <div class="card-title text-muted-foreground">Membership</div>
-              <div class="card-value">{{ 'Premium' if user.is_premium else 'Free' }}</div>
-              <div class="card-meta text-muted-foreground">Current access level</div>
-            </article>
-            <article class="metric-card bg-card text-card-foreground border-border rounded-xl">
-              <div class="card-title text-muted-foreground">Billing</div>
-              <div class="card-value">{{ 'Manage in Stripe' if user.stripe_customer_id else 'Not connected' }}</div>
-              <div class="card-meta text-muted-foreground">Invoices and cancellation</div>
-            </article>
-          </section>
-
           <section class="account-panel bg-card text-card-foreground border-border rounded-xl">
             <h2>Account Details</h2>
             <p>Manage your current access and billing settings from the same dashboard style as the main domain view.</p>
@@ -640,6 +783,22 @@ USER_TEMPLATE = """
               {% endif %}
               <a class="action-button rounded-md" href="{{ url_for('index') }}">Back to domains</a>
             </div>
+            <form class="password-form" method="post" action="{{ url_for('user_page') }}">
+              <h3>Change password</h3>
+              {% if error %}
+                <div class="form-message error">{{ error }}</div>
+              {% endif %}
+              {% if success %}
+                <div class="form-message success">{{ success }}</div>
+              {% endif %}
+              <label for="current_password">Current password</label>
+              <input id="current_password" name="current_password" type="password" required>
+              <label for="new_password">New password</label>
+              <input id="new_password" name="new_password" type="password" minlength="8" required>
+              <label for="confirm_password">Confirm new password</label>
+              <input id="confirm_password" name="confirm_password" type="password" minlength="8" required>
+              <button class="action-button primary" type="submit">Update password</button>
+            </form>
           </section>
         </div>
       </main>
@@ -992,11 +1151,7 @@ def index():
         page = max(int(request.args.get("page", "1")), 1)
     except ValueError:
         page = 1
-    try:
-        requested_page_size = int(request.args.get("page_size", "25"))
-    except ValueError:
-        requested_page_size = 25
-    page_size = requested_page_size if requested_page_size in {10, 25, 50} else 25
+    page_size = 100
     latest_fetch_date = db.session.query(db.func.max(Domain.fetch_date)).scalar()
     latest_release_date = db.session.query(db.func.max(Domain.release_date)).scalar()
     using_live_fallback = False
@@ -1017,7 +1172,7 @@ def index():
 
     if active_date is None:
         try:
-            scraped_domains = scrape_domains()
+            scraped_domains = scrape_domains(release_date=release_date)
         except Exception:
             scraped_domains = []
 
@@ -1030,15 +1185,19 @@ def index():
         if not current_user.is_authenticated or not current_user.is_premium:
             accessible_domains = filtered_scraped_domains[:25]
             is_limited = total_filtered > 25
+            total_pages = max(1, (len(accessible_domains) + page_size - 1) // page_size) if accessible_domains else 1
+            if page > total_pages:
+                page = total_pages
+            start_offset = (page - 1) * page_size
+            visible_domains = accessible_domains[start_offset:start_offset + page_size]
         else:
             accessible_domains = filtered_scraped_domains
             is_limited = False
-
-        total_pages = max(1, (len(accessible_domains) + page_size - 1) // page_size) if accessible_domains else 1
-        if page > total_pages:
-            page = total_pages
-        start_offset = (page - 1) * page_size
-        visible_domains = accessible_domains[start_offset:start_offset + page_size]
+            total_pages = max(1, (len(accessible_domains) + page_size - 1) // page_size) if accessible_domains else 1
+            if page > total_pages:
+                page = total_pages
+            start_offset = (page - 1) * page_size
+            visible_domains = accessible_domains[start_offset:start_offset + page_size]
 
         domains = [
             SimpleNamespace(
@@ -1049,7 +1208,9 @@ def index():
             )
             for domain in visible_domains
         ]
-        domains = hydrate_visible_domains(domains, today)
+        domains = hydrate_domains_from_database(domains, today)
+        if any(domain.da is None and domain.linking_root_domains is None for domain in domains):
+            domains = hydrate_visible_domains(domains, today)
         ensure_today_domain_snapshot(scraped_domains, domains, today, current_release_date or today)
         hidden_count = max(total_domains - len(accessible_domains), 0)
         using_live_fallback = bool(scraped_domains)
@@ -1059,17 +1220,26 @@ def index():
         highest_authority = max((domain.da or 0) for domain in domains) if domains else 0
         highest_referring_domains = max((domain.linking_root_domains or 0) for domain in domains) if domains else 0
     else:
+        active_release_iso = active_date.isoformat() if hasattr(active_date, "isoformat") else None
+        allowed_domains_for_release = []
+        if active_release_iso:
+            try:
+                allowed_domains_for_release = get_release_domains_cached(active_release_iso)
+            except Exception:
+                allowed_domains_for_release = []
+
         base_query = Domain.query.filter(
             (Domain.release_date == active_date) | ((Domain.release_date.is_(None)) & (Domain.fetch_date == active_date))
         ).order_by(
             Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc()
         )
+        if allowed_domains_for_release:
+            base_query = base_query.filter(Domain.domain_name.in_(allowed_domains_for_release))
         total_domains = base_query.count()
         query = base_query
         if search_query:
             query = query.filter(Domain.domain_name.ilike(f"%{search_query}%"))
         total_filtered = query.count()
-
         if not current_user.is_authenticated or not current_user.is_premium:
             accessible_domains = query.limit(25).all()
             is_limited = total_filtered > 25
@@ -1086,8 +1256,7 @@ def index():
             is_limited = False
 
         hidden_count = max(total_domains - min(total_filtered, 25), 0) if not current_user.is_authenticated or not current_user.is_premium else 0
-        if any(domain.da is None and domain.linking_root_domains is None for domain in domains):
-            domains = hydrate_visible_domains(domains, active_date)
+        domains = hydrate_domains_from_database(domains, active_date)
         metric_summary = query.with_entities(
             db.func.max(Domain.da),
             db.func.max(Domain.linking_root_domains),
@@ -1114,6 +1283,12 @@ def index():
             "detail": "Most links to one domain",
         },
     ]
+
+    for domain in domains:
+        setattr(domain, "availability_status", None)
+    for domain in domains[:25]:
+        domain.availability_status = get_domain_availability_status(domain.domain_name)
+
     start_index = ((page - 1) * page_size) + 1 if total_filtered else 0
     end_index = min((page - 1) * page_size + len(domains), total_filtered) if total_filtered else 0
 
@@ -1185,10 +1360,29 @@ def logout():
     logout_user()
     return redirect(url_for("index"))
 
-@app.route("/user")
+@app.route("/user", methods=["GET", "POST"])
 @login_required
 def user_page():
-    return render_template_string(USER_TEMPLATE, user=current_user)
+    error = None
+    success = None
+
+    if request.method == "POST":
+        current_password = request.form.get("current_password", "")
+        new_password = request.form.get("new_password", "")
+        confirm_password = request.form.get("confirm_password", "")
+
+        if not current_user.check_password(current_password):
+            error = "Current password is incorrect."
+        elif len(new_password) < 8:
+            error = "New password must be at least 8 characters."
+        elif new_password != confirm_password:
+            error = "New password and confirmation do not match."
+        else:
+            current_user.set_password(new_password)
+            db.session.commit()
+            success = "Password updated successfully."
+
+    return render_template_string(USER_TEMPLATE, user=current_user, error=error, success=success)
 
 
 @app.route("/billing")
@@ -1237,7 +1431,7 @@ def admin():
     today_rows = Domain.query.filter_by(fetch_date=today).order_by(Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc()).all()
     if len(today_rows) <= 25:
         try:
-            scraped_domains = scrape_domains()
+            scraped_domains = scrape_domains(release_date=current_release_date.isoformat())
             ensure_today_domain_snapshot(scraped_domains, today_rows, today, current_release_date or today)
         except Exception:
             pass
