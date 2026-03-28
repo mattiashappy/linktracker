@@ -111,6 +111,33 @@ def extract_domains_from_payload(payload, suffix: str):
 
     return records
 
+def extract_domains_from_payload(payload, suffix: str):
+    records = []
+    queue = deque([payload])
+
+    while queue:
+        current = queue.popleft()
+        if isinstance(current, list):
+            queue.extend(current)
+            continue
+        if isinstance(current, dict):
+            candidate_name = current.get("name") or current.get("domain") or current.get("domain_name")
+            if isinstance(candidate_name, str):
+                normalized = normalize_scraped_domain(candidate_name, suffix)
+                if normalized:
+                    records.append(
+                        {
+                            "domain_name": normalized,
+                            "release_at": str(current.get("release_at") or "").strip() or None,
+                        }
+                    )
+            for value in current.values():
+                if isinstance(value, (list, dict)):
+                    queue.append(value)
+            continue
+
+    return records
+
 
 def scrape_domains(limit: int | None = None, release_date: str | None = None):
     sources = (
@@ -192,7 +219,10 @@ def isDomainAvailable(name: str) -> bool:
 def get_domain_availability_status(name: str) -> str:
     domain = (name or "").strip().lower()
     if not domain:
-        return "Unknown"
+        return "Taken"
+
+    if not (os.environ.get("FASTLY") or "").strip():
+        return "Taken"
 
     now = datetime.now(timezone.utc)
     cached = DOMAIN_AVAILABILITY_CACHE.get(domain)
@@ -202,7 +232,7 @@ def get_domain_availability_status(name: str) -> str:
     try:
         status = "Available" if isDomainAvailable(domain) else "Taken"
     except Exception:
-        status = "Unknown"
+        status = "Taken"
 
     DOMAIN_AVAILABILITY_CACHE[domain] = {
         "checked_at": now,
