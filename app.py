@@ -79,9 +79,8 @@ def normalize_scraped_domain(value: str, suffix: str):
 
 
 def extract_domains_from_payload(payload, suffix: str):
-    domains = []
+    records = []
     queue = [payload]
-    seen_values = set()
 
     while queue:
         current = queue.pop(0)
@@ -89,21 +88,28 @@ def extract_domains_from_payload(payload, suffix: str):
             queue.extend(current)
             continue
         if isinstance(current, dict):
+            candidate_name = current.get("name") or current.get("domain") or current.get("domain_name")
+            if isinstance(candidate_name, str):
+                normalized = normalize_scraped_domain(candidate_name, suffix)
+                if normalized:
+                    records.append(
+                        {
+                            "domain_name": normalized,
+                            "release_at": str(current.get("release_at") or "").strip() or None,
+                        }
+                    )
             for value in current.values():
                 queue.append(value)
             continue
-        if not isinstance(current, str):
-            continue
+        if isinstance(current, str):
+            normalized = normalize_scraped_domain(current, suffix)
+            if normalized:
+                records.append({"domain_name": normalized, "release_at": None})
 
-        normalized = normalize_scraped_domain(current, suffix)
-        if normalized and normalized not in seen_values:
-            seen_values.add(normalized)
-            domains.append(normalized)
-
-    return domains
+    return records
 
 
-def scrape_domains(limit: int | None = None):
+def scrape_domains(limit: int | None = None, release_date: str | None = None):
     sources = (
         (SE_DOMAINS_JSON_URL, ".se"),
         (NU_DOMAINS_JSON_URL, ".nu"),
@@ -117,12 +123,16 @@ def scrape_domains(limit: int | None = None):
         try:
             response = requests.get(url, headers=REQUEST_HEADERS, timeout=20)
             response.raise_for_status()
-            candidates = extract_domains_from_payload(response.json(), suffix)
+            records = extract_domains_from_payload(response.json(), suffix)
         except Exception as exc:
             errors.append(f"{url}: {exc}")
             continue
 
-        for domain in candidates:
+        for record in records:
+            domain = record["domain_name"]
+            domain_release = record.get("release_at")
+            if release_date and domain_release != release_date:
+                continue
             if domain in seen:
                 continue
             seen.add(domain)
@@ -1042,7 +1052,7 @@ def index():
 
     if active_date is None:
         try:
-            scraped_domains = scrape_domains()
+            scraped_domains = scrape_domains(release_date=release_date)
         except Exception:
             scraped_domains = []
 
@@ -1109,7 +1119,8 @@ def index():
         else:
             domains = query.all()
             try:
-                scraped_domains = scrape_domains()
+                active_release_iso = active_date.isoformat() if hasattr(active_date, "isoformat") else release_date
+                scraped_domains = scrape_domains(release_date=active_release_iso)
             except Exception:
                 scraped_domains = []
 
@@ -1292,7 +1303,7 @@ def admin():
     today_rows = Domain.query.filter_by(fetch_date=today).order_by(Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc()).all()
     if len(today_rows) <= 25:
         try:
-            scraped_domains = scrape_domains()
+            scraped_domains = scrape_domains(release_date=current_release_date.isoformat())
             ensure_today_domain_snapshot(scraped_domains, today_rows, today, current_release_date or today)
         except Exception:
             pass

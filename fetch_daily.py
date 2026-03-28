@@ -141,7 +141,7 @@ def refresh_daily_domains() -> None:
 
     # 2. Scrape all available domains from the official feeds
     print("Scraping all available domains...")
-    domains = scrape_domains()
+    domains = scrape_domains(release_date=release_date_value.isoformat())
 
     if not domains:
         print("No domains found. Aborting.")
