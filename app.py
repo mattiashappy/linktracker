@@ -17,6 +17,8 @@ REQUEST_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
     "Accept-Language": "en-US,en;q=0.9,sv;q=0.8",
 }
+FEED_CACHE_TTL = timedelta(minutes=15)
+RELEASE_DOMAINS_CACHE = {}
 
 
 def normalize_database_url(database_url: str) -> str:
@@ -108,6 +110,29 @@ def extract_domains_from_payload(payload, suffix: str):
 
     return records
 
+    while queue:
+        current = queue.pop(0)
+        if isinstance(current, list):
+            queue.extend(current)
+            continue
+        if isinstance(current, dict):
+            candidate_name = current.get("name") or current.get("domain") or current.get("domain_name")
+            if isinstance(candidate_name, str):
+                normalized = normalize_scraped_domain(candidate_name, suffix)
+                if normalized:
+                    records.append(
+                        {
+                            "domain_name": normalized,
+                            "release_at": str(current.get("release_at") or "").strip() or None,
+                        }
+                    )
+            for value in current.values():
+                queue.append(value)
+            continue
+        if isinstance(current, str):
+            normalized = normalize_scraped_domain(current, suffix)
+            if normalized:
+                records.append({"domain_name": normalized, "release_at": None})
 
 def scrape_domains(limit: int | None = None, release_date: str | None = None):
     sources = (
@@ -144,6 +169,20 @@ def scrape_domains(limit: int | None = None, release_date: str | None = None):
         raise RuntimeError("Could not fetch domains from Internetstiftelsen sources: " + "; ".join(errors))
 
     return extracted
+
+
+def get_release_domains_cached(release_date: str):
+    now = datetime.now(timezone.utc)
+    cached = RELEASE_DOMAINS_CACHE.get(release_date)
+    if cached and now - cached["fetched_at"] <= FEED_CACHE_TTL:
+        return cached["domains"]
+
+    domains = scrape_domains(release_date=release_date)
+    RELEASE_DOMAINS_CACHE[release_date] = {
+        "fetched_at": now,
+        "domains": domains,
+    }
+    return domains
 
 
 
@@ -1129,11 +1168,21 @@ def index():
         highest_authority = max((domain.da or 0) for domain in domains) if domains else 0
         highest_referring_domains = max((domain.linking_root_domains or 0) for domain in domains) if domains else 0
     else:
+        active_release_iso = active_date.isoformat() if hasattr(active_date, "isoformat") else None
+        allowed_domains_for_release = []
+        if active_release_iso:
+            try:
+                allowed_domains_for_release = get_release_domains_cached(active_release_iso)
+            except Exception:
+                allowed_domains_for_release = []
+
         base_query = Domain.query.filter(
             (Domain.release_date == active_date) | ((Domain.release_date.is_(None)) & (Domain.fetch_date == active_date))
         ).order_by(
             Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc()
         )
+        if allowed_domains_for_release:
+            base_query = base_query.filter(Domain.domain_name.in_(allowed_domains_for_release))
         total_domains = base_query.count()
         query = base_query
         if search_query:
