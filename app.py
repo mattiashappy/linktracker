@@ -20,6 +20,8 @@ REQUEST_HEADERS = {
 }
 FEED_CACHE_TTL = timedelta(minutes=15)
 RELEASE_DOMAINS_CACHE = {}
+DOMAIN_AVAILABILITY_CACHE = {}
+DOMAIN_AVAILABILITY_CACHE_TTL = timedelta(minutes=30)
 
 
 def normalize_database_url(database_url: str) -> str:
@@ -185,6 +187,28 @@ def isDomainAvailable(name: str) -> bool:
     if "delegated" in status or "registered" in status:
         return False
     return False
+
+
+def get_domain_availability_status(name: str) -> str:
+    domain = (name or "").strip().lower()
+    if not domain:
+        return "Unknown"
+
+    now = datetime.now(timezone.utc)
+    cached = DOMAIN_AVAILABILITY_CACHE.get(domain)
+    if cached and now - cached["checked_at"] <= DOMAIN_AVAILABILITY_CACHE_TTL:
+        return cached["status"]
+
+    try:
+        status = "Available" if isDomainAvailable(domain) else "Taken"
+    except Exception:
+        status = "Unknown"
+
+    DOMAIN_AVAILABILITY_CACHE[domain] = {
+        "checked_at": now,
+        "status": status,
+    }
+    return status
 
 
 
@@ -1290,6 +1314,12 @@ def index():
             "detail": "Most links to one domain",
         },
     ]
+
+    for domain in domains:
+        setattr(domain, "availability_status", None)
+    for domain in domains[:25]:
+        domain.availability_status = get_domain_availability_status(domain.domain_name)
+
     start_index = ((page - 1) * page_size) + 1 if total_filtered else 0
     end_index = min((page - 1) * page_size + len(domains), total_filtered) if total_filtered else 0
 
