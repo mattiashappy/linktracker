@@ -1027,11 +1027,7 @@ def index():
         page = max(int(request.args.get("page", "1")), 1)
     except ValueError:
         page = 1
-    try:
-        requested_page_size = int(request.args.get("page_size", "25"))
-    except ValueError:
-        requested_page_size = 25
-    page_size = requested_page_size if requested_page_size in {10, 25, 50} else 25
+    page_size = 100
     latest_fetch_date = db.session.query(db.func.max(Domain.fetch_date)).scalar()
     latest_release_date = db.session.query(db.func.max(Domain.release_date)).scalar()
     using_live_fallback = False
