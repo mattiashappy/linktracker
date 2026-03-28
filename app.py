@@ -451,6 +451,11 @@ USER_TEMPLATE = """
         padding: 14px 18px;
       }
       .header-left { min-width: 0; }
+      .brand-logo {
+        display: block;
+        width: min(460px, 92vw);
+        height: auto;
+      }
       .header-right {
         display: flex;
         align-items: center;
@@ -701,7 +706,7 @@ USER_TEMPLATE = """
         <div class="header-inner">
           <div class="header-left">
             <div class="page-head">
-              <h1>Domain Intelligence</h1>
+              <img class="brand-logo" src="{{ url_for('static', filename='Google-Gemini-03-26-2026_02_02_PM.svg') }}" alt="Linkinfo.se">
               <p class="text-muted-foreground">Daily curated list of expiring domains, ranked by SEO authority.</p>
             </div>
           </div>
