@@ -20,8 +20,6 @@ REQUEST_HEADERS = {
 }
 FEED_CACHE_TTL = timedelta(minutes=15)
 RELEASE_DOMAINS_CACHE = {}
-DOMAIN_AVAILABILITY_CACHE = {}
-DOMAIN_AVAILABILITY_CACHE_TTL = timedelta(minutes=30)
 
 
 def normalize_database_url(database_url: str) -> str:
@@ -82,34 +80,6 @@ def normalize_scraped_domain(value: str, suffix: str):
         return None
     return normalized
 
-    return records
-
-def extract_domains_from_payload(payload, suffix: str):
-    records = []
-    queue = deque([payload])
-
-    while queue:
-        current = queue.popleft()
-        if isinstance(current, list):
-            queue.extend(current)
-            continue
-        if isinstance(current, dict):
-            candidate_name = current.get("name") or current.get("domain") or current.get("domain_name")
-            if isinstance(candidate_name, str):
-                normalized = normalize_scraped_domain(candidate_name, suffix)
-                if normalized:
-                    records.append(
-                        {
-                            "domain_name": normalized,
-                            "release_at": str(current.get("release_at") or "").strip() or None,
-                        }
-                    )
-            for value in current.values():
-                if isinstance(value, (list, dict)):
-                    queue.append(value)
-            continue
-
-    return records
 
 def extract_domains_from_payload(payload, suffix: str):
     records = []
@@ -188,57 +158,6 @@ def get_release_domains_cached(release_date: str):
         "domains": domains,
     }
     return domains
-
-
-
-def isDomainAvailable(name: str) -> bool:
-    fastly_key = (os.environ.get("FASTLY") or "").strip()
-    if not fastly_key:
-        raise RuntimeError("Missing FASTLY API key in environment.")
-
-    domain = (name or "").strip().lower()
-    if not domain:
-        return False
-
-    response = requests.get(
-        "https://api.fastly.com/domain-management/v1/domain-research/status",
-        params={"domain": domain},
-        headers={"Fastly-Key": fastly_key, "Accept": "application/json"},
-        timeout=10,
-    )
-    response.raise_for_status()
-
-    status = str((response.json() or {}).get("status", "")).lower()
-    if "inactive" in status:
-        return True
-    if "delegated" in status or "registered" in status:
-        return False
-    return False
-
-
-def get_domain_availability_status(name: str) -> str:
-    domain = (name or "").strip().lower()
-    if not domain:
-        return "Taken"
-
-    if not (os.environ.get("FASTLY") or "").strip():
-        return "Taken"
-
-    now = datetime.now(timezone.utc)
-    cached = DOMAIN_AVAILABILITY_CACHE.get(domain)
-    if cached and now - cached["checked_at"] <= DOMAIN_AVAILABILITY_CACHE_TTL:
-        return cached["status"]
-
-    try:
-        status = "Available" if isDomainAvailable(domain) else "Taken"
-    except Exception:
-        status = "Taken"
-
-    DOMAIN_AVAILABILITY_CACHE[domain] = {
-        "checked_at": now,
-        "status": status,
-    }
-    return status
 
 
 
@@ -1344,11 +1263,6 @@ def index():
             "detail": "Most links to one domain",
         },
     ]
-
-    for domain in domains:
-        setattr(domain, "availability_status", None)
-    for domain in domains[:25]:
-        domain.availability_status = get_domain_availability_status(domain.domain_name)
 
     start_index = ((page - 1) * page_size) + 1 if total_filtered else 0
     end_index = min((page - 1) * page_size + len(domains), total_filtered) if total_filtered else 0
