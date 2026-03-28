@@ -1096,6 +1096,7 @@ def index():
         if search_query:
             query = query.filter(Domain.domain_name.ilike(f"%{search_query}%"))
         total_filtered = query.count()
+        used_live_domains_for_premium = False
 
         if not current_user.is_authenticated or not current_user.is_premium:
             accessible_domains = query.limit(25).all()
@@ -1106,20 +1107,48 @@ def index():
             start_offset = (page - 1) * page_size
             domains = accessible_domains[start_offset:start_offset + page_size]
         else:
+            domains = query.all()
+            try:
+                scraped_domains = scrape_domains()
+            except Exception:
+                scraped_domains = []
+
+            filtered_scraped_domains = [
+                domain for domain in scraped_domains if search_query in domain.lower()
+            ] if search_query else scraped_domains
+
+            if len(filtered_scraped_domains) > total_filtered:
+                total_domains = len(scraped_domains)
+                total_filtered = len(filtered_scraped_domains)
+                domains = [
+                    SimpleNamespace(
+                        domain_name=domain,
+                        da=None,
+                        linking_root_domains=None,
+                        release_date=active_date or release_date,
+                    )
+                    for domain in filtered_scraped_domains
+                ]
+                domains = hydrate_visible_domains(domains, active_date or today)
+                used_live_domains_for_premium = True
+
             total_pages = 1
             page = 1
-            domains = query.all()
             is_limited = False
 
         hidden_count = max(total_domains - min(total_filtered, 25), 0) if not current_user.is_authenticated or not current_user.is_premium else 0
-        if any(domain.da is None and domain.linking_root_domains is None for domain in domains):
+        if (not used_live_domains_for_premium) and any(domain.da is None and domain.linking_root_domains is None for domain in domains):
             domains = hydrate_visible_domains(domains, active_date)
-        metric_summary = query.with_entities(
-            db.func.max(Domain.da),
-            db.func.max(Domain.linking_root_domains),
-        ).order_by(None).first()
-        highest_authority = metric_summary[0] or 0
-        highest_referring_domains = metric_summary[1] or 0
+        if used_live_domains_for_premium:
+            highest_authority = max((domain.da or 0) for domain in domains) if domains else 0
+            highest_referring_domains = max((domain.linking_root_domains or 0) for domain in domains) if domains else 0
+        else:
+            metric_summary = query.with_entities(
+                db.func.max(Domain.da),
+                db.func.max(Domain.linking_root_domains),
+            ).order_by(None).first()
+            highest_authority = metric_summary[0] or 0
+            highest_referring_domains = metric_summary[1] or 0
 
     domains_with_da = [domain.da for domain in domains if domain.da is not None]
     domains_with_links = [domain.linking_root_domains for domain in domains if domain.linking_root_domains is not None]
