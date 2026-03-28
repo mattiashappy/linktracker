@@ -1,54 +1,19 @@
 import os
-import re
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 import requests
-from bs4 import BeautifulSoup
 from requests.auth import HTTPBasicAuth
 
-from app import app, ensure_database_schema, fetch_release_date
+from app import app, ensure_database_schema, fetch_release_date, scrape_domains
 from models import Domain, db
 
-SOURCE_URL = "https://www.rymdweb.com/domain/snapback/?action=date"
 MOZ_API_URL = "https://lsapi.seomoz.com/v2/url_metrics"
 REQUEST_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
     "Accept-Language": "en-US,en;q=0.9,sv;q=0.8",
 }
-DOMAIN_PATTERN = re.compile(r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:se|nu)\b", re.IGNORECASE)
-
-
-def scrape_domains(limit: Optional[int] = None) -> List[str]:
-    response = requests.get(SOURCE_URL, headers=REQUEST_HEADERS, timeout=20)
-    response.raise_for_status()
-
-    soup = BeautifulSoup(response.text, "html.parser")
-    extracted: List[str] = []
-    seen = set()
-
-    for selector in ("table td", "table th", "tbody td", "a", "tr"):
-        for element in soup.select(selector):
-            text = " ".join(element.stripped_strings)
-            for match in DOMAIN_PATTERN.findall(text):
-                domain = match.lower().strip()
-                if domain not in seen:
-                    seen.add(domain)
-                    extracted.append(domain)
-                    if limit and len(extracted) >= limit:
-                        return extracted
-
-    page_text = soup.get_text(" ", strip=True)
-    for match in DOMAIN_PATTERN.findall(page_text):
-        domain = match.lower().strip()
-        if domain not in seen:
-            seen.add(domain)
-            extracted.append(domain)
-            if limit and len(extracted) >= limit:
-                break
-
-    return extracted
 
 
 
@@ -174,24 +139,34 @@ def refresh_daily_domains() -> None:
         print(f"Date parse failed: {e}. Using today's date.")
         release_date_value = today
 
-    # 2. Scrape EXACTLY 25 domains
-    print("Scraping top 25 domains...")
-    domains = scrape_domains(limit=25)
+    # 2. Scrape all available domains from the official feeds
+    print("Scraping all available domains...")
+    domains = scrape_domains()
 
     if not domains:
         print("No domains found. Aborting.")
         return
 
-    # 3. Fetch metrics for those 25 (Safe from 400 error now)
+    # 3. Fetch metrics for a limited subset to avoid oversized Moz requests
+    metric_targets = domains[:25]
+    metrics_by_domain: Dict[str, Dict[str, Any]] = {}
     try:
-        print(f"Fetching Moz metrics for {len(domains)} domains...")
-        all_metrics = fetch_moz_metrics(domains)
+        print(f"Fetching Moz metrics for {len(metric_targets)} domains...")
+        metrics_by_domain = {
+            item["domain_name"]: item
+            for item in fetch_moz_metrics(metric_targets)
+        }
     except Exception as e:
         print(f"Moz API Error: {e}. Saving domains without metrics.")
-        all_metrics = [
-            {"domain_name": d, "da": None, "linking_root_domains": None}
-            for d in domains
-        ]
+
+    all_metrics = [
+        {
+            "domain_name": domain,
+            "da": metrics_by_domain.get(domain, {}).get("da"),
+            "linking_root_domains": metrics_by_domain.get(domain, {}).get("linking_root_domains"),
+        }
+        for domain in domains
+    ]
 
     # 4. Save to Database
     with app.app_context():
