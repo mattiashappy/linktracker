@@ -591,11 +591,26 @@ USER_TEMPLATE = """
         display: grid;
         gap: 10px;
       }
+      .premium-alert-form {
+        margin-top: 20px;
+        border-top: 1px solid hsl(var(--border));
+        padding-top: 16px;
+        display: grid;
+        gap: 10px;
+      }
       .password-form h3 {
         margin: 0;
         font-size: 0.98rem;
       }
+      .premium-alert-form h3 {
+        margin: 0;
+        font-size: 0.98rem;
+      }
       .password-form label {
+        font-size: 0.82rem;
+        color: hsl(var(--muted-foreground));
+      }
+      .premium-alert-form label {
         font-size: 0.82rem;
         color: hsl(var(--muted-foreground));
       }
@@ -607,6 +622,21 @@ USER_TEMPLATE = """
         border: 1px solid hsl(var(--border));
         background: hsl(var(--card));
         color: hsl(var(--card-foreground));
+      }
+      .premium-alert-form input[type="number"] {
+        width: 100%;
+        min-height: 38px;
+        padding: 8px 10px;
+        border-radius: 0.5rem;
+        border: 1px solid hsl(var(--border));
+        background: hsl(var(--card));
+        color: hsl(var(--card-foreground));
+      }
+      .premium-alert-toggle {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        font-size: 0.88rem;
       }
       .form-message {
         font-size: 0.85rem;
@@ -733,7 +763,25 @@ USER_TEMPLATE = """
               {% endif %}
               <a class="action-button rounded-md" href="{{ url_for('index') }}">Back to domains</a>
             </div>
+            {% if user.is_premium %}
+              <form class="premium-alert-form" method="post" action="{{ url_for('user_page') }}">
+                <input type="hidden" name="form_name" value="da_alert">
+                <h3>Daily DA email alerts</h3>
+                <p>
+                  Get one email per day with domains that have a Domain Authority (DA/DR) above your chosen limit.
+                  The default threshold is 15, and you can change it any time.
+                </p>
+                <label class="premium-alert-toggle" for="da_alert_enabled">
+                  <input id="da_alert_enabled" name="da_alert_enabled" type="checkbox" {% if user.da_alert_enabled %}checked{% endif %}>
+                  Enable daily DA alert emails
+                </label>
+                <label for="da_alert_threshold">Minimum DA threshold</label>
+                <input id="da_alert_threshold" name="da_alert_threshold" type="number" min="1" max="100" value="{{ user.da_alert_threshold or 15 }}">
+                <button class="action-button primary" type="submit">Save DA alert settings</button>
+              </form>
+            {% endif %}
             <form class="password-form" method="post" action="{{ url_for('user_page') }}">
+              <input type="hidden" name="form_name" value="password">
               <h3>Change password</h3>
               {% if error %}
                 <div class="form-message error">{{ error }}</div>
@@ -1083,6 +1131,11 @@ def ensure_database_schema():
         connection.execute(db.text("ALTER TABLE domain ADD COLUMN IF NOT EXISTS release_date DATE"))
         connection.execute(db.text("CREATE INDEX IF NOT EXISTS ix_domain_release_date ON domain (release_date)"))
         connection.execute(db.text("UPDATE domain SET release_date = fetch_date WHERE release_date IS NULL"))
+        connection.execute(db.text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS da_alert_enabled BOOLEAN DEFAULT FALSE'))
+        connection.execute(db.text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS da_alert_threshold INTEGER DEFAULT 15'))
+        connection.execute(db.text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS da_alert_last_sent DATE'))
+        connection.execute(db.text('UPDATE "user" SET da_alert_enabled = FALSE WHERE da_alert_enabled IS NULL'))
+        connection.execute(db.text('UPDATE "user" SET da_alert_threshold = 15 WHERE da_alert_threshold IS NULL'))
         try:
             connection.execute(db.text('ALTER TABLE "user" ALTER COLUMN password_hash DROP NOT NULL'))
         except Exception:
@@ -1342,20 +1395,40 @@ def user_page():
     success = None
 
     if request.method == "POST":
-        current_password = request.form.get("current_password", "")
-        new_password = request.form.get("new_password", "")
-        confirm_password = request.form.get("confirm_password", "")
+        form_name = request.form.get("form_name", "password")
+        if form_name == "da_alert":
+            if not current_user.is_premium:
+                error = "DA alert emails are available for Premium users only."
+            else:
+                da_alert_enabled = request.form.get("da_alert_enabled") == "on"
+                threshold_raw = request.form.get("da_alert_threshold", "").strip()
+                try:
+                    threshold_value = int(threshold_raw or "15")
+                except ValueError:
+                    threshold_value = -1
 
-        if not current_user.check_password(current_password):
-            error = "Current password is incorrect."
-        elif len(new_password) < 8:
-            error = "New password must be at least 8 characters."
-        elif new_password != confirm_password:
-            error = "New password and confirmation do not match."
+                if threshold_value < 1 or threshold_value > 100:
+                    error = "DA threshold must be a number between 1 and 100."
+                else:
+                    current_user.da_alert_enabled = da_alert_enabled
+                    current_user.da_alert_threshold = threshold_value
+                    db.session.commit()
+                    success = "Daily DA alert settings updated."
         else:
-            current_user.set_password(new_password)
-            db.session.commit()
-            success = "Password updated successfully."
+            current_password = request.form.get("current_password", "")
+            new_password = request.form.get("new_password", "")
+            confirm_password = request.form.get("confirm_password", "")
+
+            if not current_user.check_password(current_password):
+                error = "Current password is incorrect."
+            elif len(new_password) < 8:
+                error = "New password must be at least 8 characters."
+            elif new_password != confirm_password:
+                error = "New password and confirmation do not match."
+            else:
+                current_user.set_password(new_password)
+                db.session.commit()
+                success = "Password updated successfully."
 
     return render_template_string(USER_TEMPLATE, user=current_user, error=error, success=success)
 

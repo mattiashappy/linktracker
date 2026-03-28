@@ -12,6 +12,9 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(255), nullable=True)
     is_premium = db.Column(db.Boolean, default=False, nullable=False)
     stripe_customer_id = db.Column(db.String(255), nullable=True)
+    da_alert_enabled = db.Column(db.Boolean, default=False, nullable=False)
+    da_alert_threshold = db.Column(db.Integer, default=15, nullable=False)
+    da_alert_last_sent = db.Column(db.Date, nullable=True)
 
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
