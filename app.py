@@ -467,14 +467,12 @@ USER_TEMPLATE = """
         text-decoration: none;
       }
       .icon-button,
-      .user-trigger,
       .action-button {
         border: 1px solid hsl(var(--border));
         background: hsl(var(--card));
         color: hsl(var(--card-foreground));
       }
-      .icon-button,
-      .user-trigger {
+      .icon-button {
         width: 40px;
         min-height: 40px;
         display: inline-flex;
@@ -487,6 +485,7 @@ USER_TEMPLATE = """
         display: inline-flex;
         align-items: center;
         justify-content: center;
+        width: auto;
         min-height: 38px;
         padding: 8px 16px;
         border-radius: 6px;
@@ -671,31 +670,6 @@ USER_TEMPLATE = """
       .theme-icon.moon { display: none; }
       .dark .theme-icon.sun { display: none; }
       .dark .theme-icon.moon { display: block; }
-      details.user-menu { position: relative; }
-      .dropdown {
-        position: absolute;
-        right: 0;
-        top: calc(100% + 8px);
-        min-width: 160px;
-        border: 1px solid hsl(var(--border));
-        background: hsl(var(--card));
-        border-radius: 0.75rem;
-        padding: 6px;
-        display: grid;
-        gap: 4px;
-      }
-      .dropdown a {
-        min-height: 34px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 0.5rem;
-        color: hsl(var(--muted-foreground));
-      }
-      .dropdown a:hover {
-        background: hsl(var(--accent));
-        color: hsl(var(--accent-foreground));
-      }
       @media (max-width: 980px) {
         .metrics-grid,
         .details-grid {
@@ -745,13 +719,6 @@ USER_TEMPLATE = """
                 <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"></path>
               </svg>
             </button>
-            <details class="user-menu">
-              <summary class="user-trigger rounded-md" aria-label="Profile menu">{{ user.email[0]|upper }}</summary>
-              <div class="dropdown text-card-foreground">
-                <a href="{{ url_for('user_page') }}">{{ user.email }}</a>
-                <a href="{{ url_for('logout') }}">Logout</a>
-              </div>
-            </details>
           </div>
         </div>
       </header>
