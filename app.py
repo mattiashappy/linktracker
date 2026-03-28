@@ -730,16 +730,22 @@ USER_TEMPLATE = """
             <p>Manage your current access and billing settings from the same dashboard style as the main domain view.</p>
             <div class="details-grid">
               <div class="detail-card">
+                <div class="detail-label">Daily DA alerts</div>
+                <div class="detail-value">
+                  {% if user.is_premium %}
+                    {{ 'Enabled' if user.da_alert_enabled else 'Disabled' }} (Threshold: {{ user.da_alert_threshold or 15 }})
+                  {% else %}
+                    Premium only
+                  {% endif %}
+                </div>
+              </div>
+              <div class="detail-card">
                 <div class="detail-label">Email</div>
                 <div class="detail-value">{{ user.email }}</div>
               </div>
               <div class="detail-card">
                 <div class="detail-label">Plan</div>
                 <div class="detail-value"><span class="badge">{{ 'Premium' if user.is_premium else 'Free' }}</span></div>
-              </div>
-              <div class="detail-card">
-                <div class="detail-label">Billing</div>
-                <div class="detail-value">{{ 'Invoices and cancellation' if user.stripe_customer_id else 'Available after checkout' }}</div>
               </div>
             </div>
             <div class="actions">
@@ -1413,7 +1419,7 @@ def logout():
 def user_page():
     error = None
     success = None
-    active_panel = None
+    active_panel = "da_alert" if current_user.is_premium else None
 
     if request.method == "POST":
         form_name = request.form.get("form_name", "password")
