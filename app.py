@@ -1107,8 +1107,49 @@ def index():
             query = query.filter(Domain.domain_name.ilike(f"%{search_query}%"))
         total_filtered = query.count()
         used_live_domains_for_premium = False
+        active_release_iso = active_date.isoformat() if hasattr(active_date, "isoformat") else release_date
 
-        if not current_user.is_authenticated or not current_user.is_premium:
+        live_domains_for_date = []
+        try:
+            live_domains_for_date = scrape_domains(release_date=active_release_iso)
+        except Exception:
+            live_domains_for_date = []
+
+        if live_domains_for_date:
+            filtered_live_domains = [
+                domain for domain in live_domains_for_date if search_query in domain.lower()
+            ] if search_query else live_domains_for_date
+            total_domains = len(live_domains_for_date)
+            total_filtered = len(filtered_live_domains)
+
+            if not current_user.is_authenticated or not current_user.is_premium:
+                accessible_domains = filtered_live_domains[:25]
+                is_limited = total_filtered > 25
+                total_pages = max(1, (len(accessible_domains) + page_size - 1) // page_size) if accessible_domains else 1
+                if page > total_pages:
+                    page = total_pages
+                start_offset = (page - 1) * page_size
+                visible_domains = accessible_domains[start_offset:start_offset + page_size]
+            else:
+                accessible_domains = filtered_live_domains
+                is_limited = False
+                total_pages = 1
+                page = 1
+                visible_domains = accessible_domains
+
+            domains = [
+                SimpleNamespace(
+                    domain_name=domain,
+                    da=None,
+                    linking_root_domains=None,
+                    release_date=active_release_iso,
+                )
+                for domain in visible_domains
+            ]
+            domains = hydrate_visible_domains(domains, active_date)
+            if current_user.is_authenticated and current_user.is_premium:
+                used_live_domains_for_premium = True
+        elif not current_user.is_authenticated or not current_user.is_premium:
             accessible_domains = query.limit(25).all()
             is_limited = total_filtered > 25
             total_pages = max(1, (len(accessible_domains) + page_size - 1) // page_size) if accessible_domains else 1
@@ -1119,7 +1160,6 @@ def index():
         else:
             domains = query.all()
             try:
-                active_release_iso = active_date.isoformat() if hasattr(active_date, "isoformat") else release_date
                 scraped_domains = scrape_domains(release_date=active_release_iso)
             except Exception:
                 scraped_domains = []
