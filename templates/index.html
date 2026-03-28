@@ -342,6 +342,40 @@
         border-top: 1px solid hsl(var(--border));
         font-size: 0.84rem;
       }
+      .premium-upsell {
+        border: 1px solid hsl(var(--border));
+        padding: 18px;
+        display: grid;
+        gap: 14px;
+      }
+      .premium-upsell-head h3 {
+        margin: 0;
+        font-size: 1.1rem;
+        letter-spacing: -0.01em;
+      }
+      .premium-upsell-head p {
+        margin: 8px 0 0;
+        font-size: 0.92rem;
+        color: hsl(var(--muted-foreground));
+      }
+      .premium-upgrade-list {
+        margin: 0;
+        padding-left: 18px;
+        display: grid;
+        gap: 6px;
+        color: hsl(var(--muted-foreground));
+        font-size: 0.9rem;
+      }
+      .premium-upsell-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .premium-note {
+        margin: 0;
+        font-size: 0.8rem;
+        color: hsl(var(--muted-foreground));
+      }
 
       .pagination {
         display: flex;
@@ -469,13 +503,6 @@
                   <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"></path>
                 </svg>
               </button>
-              <details class="user-menu">
-                <summary class="user-trigger rounded-md" aria-label="Profile menu">{{ current_user.email[0]|upper }}</summary>
-                <div class="dropdown text-card-foreground">
-                  <a href="{{ url_for('user_page') }}">{{ current_user.email }}</a>
-                  <a href="{{ url_for('logout') }}">Logout</a>
-                </div>
-              </details>
             {% else %}
               <a class="header-link" href="{{ url_for('login') }}">Login</a>
               <a class="signup-button" href="{{ url_for('checkout') }}">Sign Up</a>
@@ -517,17 +544,6 @@
               <div>
                 <h2>Active Opportunities</h2>
                 <p class="text-muted-foreground">Showing domains available for the selected release date.</p>
-              </div>
-              <div class="table-tools">
-                <form class="search-form" method="get" action="{{ url_for('index') }}">
-                  <input class="search-input rounded-md" type="search" name="q" value="{{ search_query }}" aria-label="Search domain name">
-                  <select class="page-size rounded-md" name="page_size" aria-label="Rows per page">
-                    <option value="10" {% if page_size == 10 %}selected{% endif %}>10</option>
-                    <option value="25" {% if page_size == 25 %}selected{% endif %}>25</option>
-                    <option value="50" {% if page_size == 50 %}selected{% endif %}>50</option>
-                  </select>
-                  <button class="icon-button rounded-md" type="submit" aria-label="Search">⌕</button>
-                </form>
               </div>
             </div>
 
@@ -574,6 +590,25 @@
               </div>
             </div>
           </section>
+          {% if not current_user.is_authenticated or not current_user.is_premium %}
+            <section class="premium-upsell bg-card text-card-foreground rounded-xl">
+              <div class="premium-upsell-head">
+                <h3>Premium Membership</h3>
+                <p>Upgrade to Premium to unlock the full domain list and deeper discovery tools.</p>
+              </div>
+              <ul class="premium-upgrade-list">
+                <li>Access all domains without the free plan limit.</li>
+                <li>See full opportunities beyond the currently visible rows.</li>
+                <li>Keep your account synced with Stripe billing and upgrades.</li>
+              </ul>
+              <div class="premium-upsell-actions">
+                <a class="signup-button" href="{{ url_for('checkout') }}">Upgrade to Premium</a>
+              </div>
+              {% if hidden_count > 0 %}
+                <p class="premium-note">{{ hidden_count }} additional domains are currently hidden behind Premium.</p>
+              {% endif %}
+            </section>
+          {% endif %}
         </div>
       </main>
     </div>
