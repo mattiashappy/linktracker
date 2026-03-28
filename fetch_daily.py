@@ -1,5 +1,7 @@
 import os
+import smtplib
 from datetime import date, datetime, timezone
+from email.message import EmailMessage
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
@@ -7,7 +9,7 @@ import requests
 from requests.auth import HTTPBasicAuth
 
 from app import app, ensure_database_schema, fetch_release_date, scrape_domains
-from models import Domain, db
+from models import Domain, User, db
 
 MOZ_API_URL = "https://lsapi.seomoz.com/v2/url_metrics"
 REQUEST_HEADERS = {
@@ -128,6 +130,81 @@ def fetch_moz_metrics(domains: List[str]) -> List[Dict[str, Any]]:
 
 
 
+def send_email(recipient: str, subject: str, body: str) -> None:
+    smtp_host = (os.environ.get("SMTP_HOST") or "").strip()
+    smtp_port = int((os.environ.get("SMTP_PORT") or "587").strip())
+    smtp_user = (os.environ.get("SMTP_USER") or "").strip()
+    smtp_password = (os.environ.get("SMTP_PASSWORD") or "").strip()
+    smtp_from = (os.environ.get("SMTP_FROM_EMAIL") or smtp_user).strip()
+    smtp_use_tls = (os.environ.get("SMTP_USE_TLS", "true").strip().lower() != "false")
+
+    if not smtp_host or not smtp_from:
+        raise RuntimeError("SMTP is not configured. Set SMTP_HOST and SMTP_FROM_EMAIL (or SMTP_USER).")
+
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = smtp_from
+    message["To"] = recipient
+    message.set_content(body)
+
+    with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as server:
+        if smtp_use_tls:
+            server.starttls()
+        if smtp_user and smtp_password:
+            server.login(smtp_user, smtp_password)
+        server.send_message(message)
+
+
+def send_premium_da_alerts(active_date: date) -> None:
+    premium_users = User.query.filter_by(is_premium=True, da_alert_enabled=True).all()
+    if not premium_users:
+        print("No premium DA alerts enabled.")
+        return
+
+    for user in premium_users:
+        if user.da_alert_last_sent == active_date:
+            continue
+
+        threshold = user.da_alert_threshold or 15
+        matching_domains = (
+            Domain.query.filter(
+                ((Domain.release_date == active_date) | ((Domain.release_date.is_(None)) & (Domain.fetch_date == active_date))),
+                Domain.da.isnot(None),
+                Domain.da >= threshold,
+            )
+            .order_by(Domain.da.desc(), Domain.domain_name.asc())
+            .limit(200)
+            .all()
+        )
+
+        if not matching_domains:
+            continue
+
+        lines = [
+            "Hi,",
+            "",
+            f"Here is your daily domain alert for {active_date.isoformat()}.",
+            f"Threshold: DA >= {threshold}",
+            "",
+            "Matching domains:",
+        ]
+        lines.extend(f"- {domain.domain_name} (DA {domain.da})" for domain in matching_domains)
+        lines.extend(["", "You can update this threshold from your membership page at any time."])
+
+        try:
+            send_email(
+                recipient=user.email,
+                subject=f"Your DA alert: {len(matching_domains)} domains above DA {threshold}",
+                body="\n".join(lines),
+            )
+            user.da_alert_last_sent = active_date
+            db.session.commit()
+            print(f"Sent DA alert email to {user.email} with {len(matching_domains)} domains.")
+        except Exception as exc:
+            db.session.rollback()
+            print(f"Failed to send DA alert email to {user.email}: {exc}")
+
+
 def refresh_daily_domains() -> None:
     today = datetime.now(timezone.utc).date()
 
@@ -187,6 +264,7 @@ def refresh_daily_domains() -> None:
             )
 
         db.session.commit()
+        send_premium_da_alerts(release_date_value)
         print(f"✅ Success! Saved {len(all_metrics)} domains for {today}.")
 
 
