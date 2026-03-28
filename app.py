@@ -1,25 +1,22 @@
 import os
-import re
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import requests
 import stripe
-from bs4 import BeautifulSoup
 from flask import Flask, abort, redirect, render_template, render_template_string, request, session, url_for
 from flask_login import LoginManager, current_user, login_required, login_user, logout_user
 from requests.auth import HTTPBasicAuth
 
 from models import Domain, User, db
 
-SOURCE_URL = "https://www.rymdweb.com/domain/snapback/?action=date"
+SE_DOMAINS_JSON_URL = "https://data.internetstiftelsen.se/bardate_domains.json"
+NU_DOMAINS_JSON_URL = "https://data.internetstiftelsen.se/bardate_domains_nu.json"
 MOZ_API_URL = "https://lsapi.seomoz.com/v2/url_metrics"
 REQUEST_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
     "Accept-Language": "en-US,en;q=0.9,sv;q=0.8",
 }
-DOMAIN_PATTERN = re.compile(r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:se|nu)\b", re.IGNORECASE)
-RELEASE_DATE_PATTERN = re.compile(r"Domäner som släpps\s+(\d{4}-\d{2}-\d{2})", re.IGNORECASE)
 
 
 def normalize_database_url(database_url: str) -> str:
@@ -66,47 +63,85 @@ stripe.api_key = get_stripe_secret_key()
 
 
 def fetch_release_date():
-    response = requests.get(SOURCE_URL, headers=REQUEST_HEADERS, timeout=20)
-    response.raise_for_status()
-
-    text = response.text
-    match = RELEASE_DATE_PATTERN.search(text)
-    if match:
-        return match.group(1)
-
-    soup = BeautifulSoup(text, "html.parser")
-    page_text = soup.get_text(" ", strip=True)
-    match = RELEASE_DATE_PATTERN.search(page_text)
-    return match.group(1) if match else None
+    return (datetime.now(timezone.utc).date() + timedelta(days=1)).isoformat()
 
 
-def scrape_domains(limit: int | None = None):
-    response = requests.get(SOURCE_URL, headers=REQUEST_HEADERS, timeout=20)
-    response.raise_for_status()
+def normalize_scraped_domain(value: str, suffix: str):
+    normalized = value.strip().lower().strip(".")
+    if normalized.startswith(("http://", "https://")):
+        normalized = normalized.split("://", 1)[1]
+    normalized = normalized.strip("/")
+    if normalized.startswith("www."):
+        normalized = normalized[4:]
+    if not normalized.endswith(suffix):
+        return None
+    return normalized
 
-    soup = BeautifulSoup(response.text, "html.parser")
+
+def extract_domains_from_payload(payload, suffix: str):
+    records = []
+    queue = [payload]
+
+    while queue:
+        current = queue.pop(0)
+        if isinstance(current, list):
+            queue.extend(current)
+            continue
+        if isinstance(current, dict):
+            candidate_name = current.get("name") or current.get("domain") or current.get("domain_name")
+            if isinstance(candidate_name, str):
+                normalized = normalize_scraped_domain(candidate_name, suffix)
+                if normalized:
+                    records.append(
+                        {
+                            "domain_name": normalized,
+                            "release_at": str(current.get("release_at") or "").strip() or None,
+                        }
+                    )
+            for value in current.values():
+                queue.append(value)
+            continue
+        if isinstance(current, str):
+            normalized = normalize_scraped_domain(current, suffix)
+            if normalized:
+                records.append({"domain_name": normalized, "release_at": None})
+
+    return records
+
+
+def scrape_domains(limit: int | None = None, release_date: str | None = None):
+    sources = (
+        (SE_DOMAINS_JSON_URL, ".se"),
+        (NU_DOMAINS_JSON_URL, ".nu"),
+    )
+
     extracted = []
     seen = set()
+    errors = []
 
-    for selector in ("table td", "table th", "tbody td", "a", "tr"):
-        for element in soup.select(selector):
-            text = " ".join(element.stripped_strings)
-            for match in DOMAIN_PATTERN.findall(text):
-                domain = match.lower().strip()
-                if domain not in seen:
-                    seen.add(domain)
-                    extracted.append(domain)
-                    if limit and len(extracted) >= limit:
-                        return extracted
+    for url, suffix in sources:
+        try:
+            response = requests.get(url, headers=REQUEST_HEADERS, timeout=20)
+            response.raise_for_status()
+            records = extract_domains_from_payload(response.json(), suffix)
+        except Exception as exc:
+            errors.append(f"{url}: {exc}")
+            continue
 
-    page_text = soup.get_text(" ", strip=True)
-    for match in DOMAIN_PATTERN.findall(page_text):
-        domain = match.lower().strip()
-        if domain not in seen:
+        for record in records:
+            domain = record["domain_name"]
+            domain_release = record.get("release_at")
+            if release_date and domain_release != release_date:
+                continue
+            if domain in seen:
+                continue
             seen.add(domain)
             extracted.append(domain)
             if limit and len(extracted) >= limit:
-                break
+                return extracted
+
+    if not extracted and errors:
+        raise RuntimeError("Could not fetch domains from Internetstiftelsen sources: " + "; ".join(errors))
 
     return extracted
 
@@ -1017,7 +1052,7 @@ def index():
 
     if active_date is None:
         try:
-            scraped_domains = scrape_domains()
+            scraped_domains = scrape_domains(release_date=release_date)
         except Exception:
             scraped_domains = []
 
@@ -1030,15 +1065,17 @@ def index():
         if not current_user.is_authenticated or not current_user.is_premium:
             accessible_domains = filtered_scraped_domains[:25]
             is_limited = total_filtered > 25
+            total_pages = max(1, (len(accessible_domains) + page_size - 1) // page_size) if accessible_domains else 1
+            if page > total_pages:
+                page = total_pages
+            start_offset = (page - 1) * page_size
+            visible_domains = accessible_domains[start_offset:start_offset + page_size]
         else:
             accessible_domains = filtered_scraped_domains
             is_limited = False
-
-        total_pages = max(1, (len(accessible_domains) + page_size - 1) // page_size) if accessible_domains else 1
-        if page > total_pages:
-            page = total_pages
-        start_offset = (page - 1) * page_size
-        visible_domains = accessible_domains[start_offset:start_offset + page_size]
+            total_pages = 1
+            page = 1
+            visible_domains = accessible_domains
 
         domains = [
             SimpleNamespace(
@@ -1069,8 +1106,50 @@ def index():
         if search_query:
             query = query.filter(Domain.domain_name.ilike(f"%{search_query}%"))
         total_filtered = query.count()
+        used_live_domains_for_premium = False
+        active_release_iso = active_date.isoformat() if hasattr(active_date, "isoformat") else release_date
 
-        if not current_user.is_authenticated or not current_user.is_premium:
+        live_domains_for_date = []
+        try:
+            live_domains_for_date = scrape_domains(release_date=active_release_iso)
+        except Exception:
+            live_domains_for_date = []
+
+        if live_domains_for_date:
+            filtered_live_domains = [
+                domain for domain in live_domains_for_date if search_query in domain.lower()
+            ] if search_query else live_domains_for_date
+            total_domains = len(live_domains_for_date)
+            total_filtered = len(filtered_live_domains)
+
+            if not current_user.is_authenticated or not current_user.is_premium:
+                accessible_domains = filtered_live_domains[:25]
+                is_limited = total_filtered > 25
+                total_pages = max(1, (len(accessible_domains) + page_size - 1) // page_size) if accessible_domains else 1
+                if page > total_pages:
+                    page = total_pages
+                start_offset = (page - 1) * page_size
+                visible_domains = accessible_domains[start_offset:start_offset + page_size]
+            else:
+                accessible_domains = filtered_live_domains
+                is_limited = False
+                total_pages = 1
+                page = 1
+                visible_domains = accessible_domains
+
+            domains = [
+                SimpleNamespace(
+                    domain_name=domain,
+                    da=None,
+                    linking_root_domains=None,
+                    release_date=active_release_iso,
+                )
+                for domain in visible_domains
+            ]
+            domains = hydrate_visible_domains(domains, active_date)
+            if current_user.is_authenticated and current_user.is_premium:
+                used_live_domains_for_premium = True
+        elif not current_user.is_authenticated or not current_user.is_premium:
             accessible_domains = query.limit(25).all()
             is_limited = total_filtered > 25
             total_pages = max(1, (len(accessible_domains) + page_size - 1) // page_size) if accessible_domains else 1
@@ -1079,21 +1158,48 @@ def index():
             start_offset = (page - 1) * page_size
             domains = accessible_domains[start_offset:start_offset + page_size]
         else:
-            total_pages = max(1, (total_filtered + page_size - 1) // page_size) if total_filtered else 1
-            if page > total_pages:
-                page = total_pages
-            domains = query.offset((page - 1) * page_size).limit(page_size).all()
+            domains = query.all()
+            try:
+                scraped_domains = scrape_domains(release_date=active_release_iso)
+            except Exception:
+                scraped_domains = []
+
+            filtered_scraped_domains = [
+                domain for domain in scraped_domains if search_query in domain.lower()
+            ] if search_query else scraped_domains
+
+            if len(filtered_scraped_domains) > total_filtered:
+                total_domains = len(scraped_domains)
+                total_filtered = len(filtered_scraped_domains)
+                domains = [
+                    SimpleNamespace(
+                        domain_name=domain,
+                        da=None,
+                        linking_root_domains=None,
+                        release_date=active_date or release_date,
+                    )
+                    for domain in filtered_scraped_domains
+                ]
+                domains = hydrate_visible_domains(domains, active_date or today)
+                used_live_domains_for_premium = True
+
+            total_pages = 1
+            page = 1
             is_limited = False
 
         hidden_count = max(total_domains - min(total_filtered, 25), 0) if not current_user.is_authenticated or not current_user.is_premium else 0
-        if any(domain.da is None and domain.linking_root_domains is None for domain in domains):
+        if (not used_live_domains_for_premium) and any(domain.da is None and domain.linking_root_domains is None for domain in domains):
             domains = hydrate_visible_domains(domains, active_date)
-        metric_summary = query.with_entities(
-            db.func.max(Domain.da),
-            db.func.max(Domain.linking_root_domains),
-        ).order_by(None).first()
-        highest_authority = metric_summary[0] or 0
-        highest_referring_domains = metric_summary[1] or 0
+        if used_live_domains_for_premium:
+            highest_authority = max((domain.da or 0) for domain in domains) if domains else 0
+            highest_referring_domains = max((domain.linking_root_domains or 0) for domain in domains) if domains else 0
+        else:
+            metric_summary = query.with_entities(
+                db.func.max(Domain.da),
+                db.func.max(Domain.linking_root_domains),
+            ).order_by(None).first()
+            highest_authority = metric_summary[0] or 0
+            highest_referring_domains = metric_summary[1] or 0
 
     domains_with_da = [domain.da for domain in domains if domain.da is not None]
     domains_with_links = [domain.linking_root_domains for domain in domains if domain.linking_root_domains is not None]
@@ -1237,7 +1343,7 @@ def admin():
     today_rows = Domain.query.filter_by(fetch_date=today).order_by(Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc()).all()
     if len(today_rows) <= 25:
         try:
-            scraped_domains = scrape_domains()
+            scraped_domains = scrape_domains(release_date=current_release_date.isoformat())
             ensure_today_domain_snapshot(scraped_domains, today_rows, today, current_release_date or today)
         except Exception:
             pass
