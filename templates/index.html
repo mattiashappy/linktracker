@@ -555,7 +555,6 @@
                     <th class="text-muted-foreground">Type</th>
                     <th id="sort-user-da" class="numeric text-muted-foreground sortable">DA <span class="sort-arrow">↕</span></th>
                     <th id="sort-user-rd" class="numeric text-muted-foreground sortable">Referring Domains <span class="sort-arrow">↕</span></th>
-                    <th class="text-muted-foreground">Availability</th>
                     <th class="text-muted-foreground">Release Date</th>
                   </tr>
                 </thead>
@@ -570,13 +569,12 @@
                         <td><span class="badge badge-primary">{{ '.se' if domain.domain_name.endswith('.se') else '.nu' }}</span></td>
                         <td class="numeric">{{ domain.da if domain.da is not none else '—' }}</td>
                         <td class="numeric">{{ domain.linking_root_domains if domain.linking_root_domains is not none else '—' }}</td>
-                        <td>{{ domain.availability_status if domain.availability_status else '—' }}</td>
                         <td>{{ resolved_release }}</td>
                       </tr>
                     {% endfor %}
                   {% else %}
                     <tr>
-                      <td colspan="6" class="text-muted-foreground" style="padding: 18px 14px; text-align: center;">No results</td>
+                      <td colspan="5" class="text-muted-foreground" style="padding: 18px 14px; text-align: center;">No results</td>
                     </tr>
                   {% endif %}
                 </tbody>
