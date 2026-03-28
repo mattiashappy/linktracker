@@ -1055,15 +1055,17 @@ def index():
         if not current_user.is_authenticated or not current_user.is_premium:
             accessible_domains = filtered_scraped_domains[:25]
             is_limited = total_filtered > 25
+            total_pages = max(1, (len(accessible_domains) + page_size - 1) // page_size) if accessible_domains else 1
+            if page > total_pages:
+                page = total_pages
+            start_offset = (page - 1) * page_size
+            visible_domains = accessible_domains[start_offset:start_offset + page_size]
         else:
             accessible_domains = filtered_scraped_domains
             is_limited = False
-
-        total_pages = max(1, (len(accessible_domains) + page_size - 1) // page_size) if accessible_domains else 1
-        if page > total_pages:
-            page = total_pages
-        start_offset = (page - 1) * page_size
-        visible_domains = accessible_domains[start_offset:start_offset + page_size]
+            total_pages = 1
+            page = 1
+            visible_domains = accessible_domains
 
         domains = [
             SimpleNamespace(
@@ -1104,10 +1106,9 @@ def index():
             start_offset = (page - 1) * page_size
             domains = accessible_domains[start_offset:start_offset + page_size]
         else:
-            total_pages = max(1, (total_filtered + page_size - 1) // page_size) if total_filtered else 1
-            if page > total_pages:
-                page = total_pages
-            domains = query.offset((page - 1) * page_size).limit(page_size).all()
+            total_pages = 1
+            page = 1
+            domains = query.all()
             is_limited = False
 
         hidden_count = max(total_domains - min(total_filtered, 25), 0) if not current_user.is_authenticated or not current_user.is_premium else 0
