@@ -1073,9 +1073,11 @@ def index():
         else:
             accessible_domains = filtered_scraped_domains
             is_limited = False
-            total_pages = 1
-            page = 1
-            visible_domains = accessible_domains
+            total_pages = max(1, (len(accessible_domains) + page_size - 1) // page_size) if accessible_domains else 1
+            if page > total_pages:
+                page = total_pages
+            start_offset = (page - 1) * page_size
+            visible_domains = accessible_domains[start_offset:start_offset + page_size]
 
         domains = [
             SimpleNamespace(
@@ -1133,9 +1135,11 @@ def index():
             else:
                 accessible_domains = filtered_live_domains
                 is_limited = False
-                total_pages = 1
-                page = 1
-                visible_domains = accessible_domains
+                total_pages = max(1, (len(accessible_domains) + page_size - 1) // page_size) if accessible_domains else 1
+                if page > total_pages:
+                    page = total_pages
+                start_offset = (page - 1) * page_size
+                visible_domains = accessible_domains[start_offset:start_offset + page_size]
 
             domains = [
                 SimpleNamespace(
@@ -1158,7 +1162,10 @@ def index():
             start_offset = (page - 1) * page_size
             domains = accessible_domains[start_offset:start_offset + page_size]
         else:
-            domains = query.all()
+            total_pages = max(1, (total_filtered + page_size - 1) // page_size) if total_filtered else 1
+            if page > total_pages:
+                page = total_pages
+            domains = query.offset((page - 1) * page_size).limit(page_size).all()
             try:
                 scraped_domains = scrape_domains(release_date=active_release_iso)
             except Exception:
@@ -1171,6 +1178,11 @@ def index():
             if len(filtered_scraped_domains) > total_filtered:
                 total_domains = len(scraped_domains)
                 total_filtered = len(filtered_scraped_domains)
+                total_pages = max(1, (total_filtered + page_size - 1) // page_size) if total_filtered else 1
+                if page > total_pages:
+                    page = total_pages
+                start_offset = (page - 1) * page_size
+                visible_domains = filtered_scraped_domains[start_offset:start_offset + page_size]
                 domains = [
                     SimpleNamespace(
                         domain_name=domain,
@@ -1178,13 +1190,10 @@ def index():
                         linking_root_domains=None,
                         release_date=active_date or release_date,
                     )
-                    for domain in filtered_scraped_domains
+                    for domain in visible_domains
                 ]
                 domains = hydrate_visible_domains(domains, active_date or today)
                 used_live_domains_for_premium = True
-
-            total_pages = 1
-            page = 1
             is_limited = False
 
         hidden_count = max(total_domains - min(total_filtered, 25), 0) if not current_user.is_authenticated or not current_user.is_premium else 0
