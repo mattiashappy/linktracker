@@ -80,6 +80,7 @@ def normalize_scraped_domain(value: str, suffix: str):
         return None
     return normalized
 
+    return records
 
 def extract_domains_from_payload(payload, suffix: str):
     records = []
@@ -158,6 +159,32 @@ def get_release_domains_cached(release_date: str):
         "domains": domains,
     }
     return domains
+
+
+
+def isDomainAvailable(name: str) -> bool:
+    fastly_key = (os.environ.get("FASTLY") or "").strip()
+    if not fastly_key:
+        raise RuntimeError("Missing FASTLY API key in environment.")
+
+    domain = (name or "").strip().lower()
+    if not domain:
+        return False
+
+    response = requests.get(
+        "https://api.fastly.com/domain-management/v1/domain-research/status",
+        params={"domain": domain},
+        headers={"Fastly-Key": fastly_key, "Accept": "application/json"},
+        timeout=10,
+    )
+    response.raise_for_status()
+
+    status = str((response.json() or {}).get("status", "")).lower()
+    if "inactive" in status:
+        return True
+    if "delegated" in status or "registered" in status:
+        return False
+    return False
 
 
 
