@@ -1152,6 +1152,36 @@ def index():
             if page > total_pages:
                 page = total_pages
             domains = query.offset((page - 1) * page_size).limit(page_size).all()
+            try:
+                scraped_domains = scrape_domains(release_date=active_release_iso)
+            except Exception:
+                scraped_domains = []
+
+            filtered_scraped_domains = [
+                domain for domain in scraped_domains if search_query in domain.lower()
+            ] if search_query else scraped_domains
+
+            if len(filtered_scraped_domains) > total_filtered:
+                total_domains = len(scraped_domains)
+                total_filtered = len(filtered_scraped_domains)
+                total_pages = max(1, (total_filtered + page_size - 1) // page_size) if total_filtered else 1
+                if page > total_pages:
+                    page = total_pages
+                start_offset = (page - 1) * page_size
+                visible_domains = filtered_scraped_domains[start_offset:start_offset + page_size]
+                domains = [
+                    SimpleNamespace(
+                        domain_name=domain,
+                        da=None,
+                        linking_root_domains=None,
+                        release_date=active_date or release_date,
+                    )
+                    for domain in visible_domains
+                ]
+                domains = hydrate_domains_from_database(domains, active_date or today)
+                if any(domain.da is None and domain.linking_root_domains is None for domain in domains):
+                    domains = hydrate_visible_domains(domains, active_date or today)
+                used_live_domains_for_premium = True
             is_limited = False
 
         hidden_count = max(total_domains - min(total_filtered, 25), 0) if not current_user.is_authenticated or not current_user.is_premium else 0
