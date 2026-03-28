@@ -284,6 +284,39 @@ def hydrate_visible_domains(domains, fetch_date):
 
 
 
+def hydrate_domains_from_database(domains, active_date):
+    if not domains or active_date is None:
+        return domains
+
+    names = [domain.domain_name for domain in domains if getattr(domain, "domain_name", None)]
+    if not names:
+        return domains
+
+    rows = (
+        Domain.query.filter(
+            Domain.domain_name.in_(names),
+            (Domain.release_date == active_date) | ((Domain.release_date.is_(None)) & (Domain.fetch_date == active_date)),
+        )
+        .order_by(Domain.da.is_(None), Domain.da.desc(), Domain.domain_name.asc())
+        .all()
+    )
+    rows_by_domain = {}
+    for row in rows:
+        if row.domain_name not in rows_by_domain:
+            rows_by_domain[row.domain_name] = row
+
+    for domain in domains:
+        cached = rows_by_domain.get(domain.domain_name)
+        if cached is None:
+            continue
+        if getattr(domain, "da", None) is None:
+            domain.da = cached.da
+        if getattr(domain, "linking_root_domains", None) is None:
+            domain.linking_root_domains = cached.linking_root_domains
+
+    return domains
+
+
 def ensure_today_domain_snapshot(scraped_domains, visible_domains, fetch_date, release_date_value):
     if not scraped_domains or fetch_date is None:
         return
@@ -1084,7 +1117,9 @@ def index():
             )
             for domain in visible_domains
         ]
-        domains = hydrate_visible_domains(domains, today)
+        domains = hydrate_domains_from_database(domains, today)
+        if any(domain.da is None and domain.linking_root_domains is None for domain in domains):
+            domains = hydrate_visible_domains(domains, today)
         ensure_today_domain_snapshot(scraped_domains, domains, today, current_release_date or today)
         hidden_count = max(total_domains - len(accessible_domains), 0)
         using_live_fallback = bool(scraped_domains)
@@ -1146,7 +1181,9 @@ def index():
                 )
                 for domain in visible_domains
             ]
-            domains = hydrate_visible_domains(domains, active_date)
+            domains = hydrate_domains_from_database(domains, active_date)
+            if any(domain.da is None and domain.linking_root_domains is None for domain in domains):
+                domains = hydrate_visible_domains(domains, active_date)
             if current_user.is_authenticated and current_user.is_premium:
                 used_live_domains_for_premium = True
         elif not current_user.is_authenticated or not current_user.is_premium:
@@ -1188,7 +1225,9 @@ def index():
                     )
                     for domain in visible_domains
                 ]
-                domains = hydrate_visible_domains(domains, active_date or today)
+                domains = hydrate_domains_from_database(domains, active_date or today)
+                if any(domain.da is None and domain.linking_root_domains is None for domain in domains):
+                    domains = hydrate_visible_domains(domains, active_date or today)
                 used_live_domains_for_premium = True
             is_limited = False
 
