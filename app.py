@@ -584,6 +584,35 @@ USER_TEMPLATE = """
         flex-wrap: wrap;
         margin-top: 18px;
       }
+      .password-form {
+        margin-top: 20px;
+        border-top: 1px solid hsl(var(--border));
+        padding-top: 16px;
+        display: grid;
+        gap: 10px;
+      }
+      .password-form h3 {
+        margin: 0;
+        font-size: 0.98rem;
+      }
+      .password-form label {
+        font-size: 0.82rem;
+        color: hsl(var(--muted-foreground));
+      }
+      .password-form input {
+        width: 100%;
+        min-height: 38px;
+        padding: 8px 10px;
+        border-radius: 0.5rem;
+        border: 1px solid hsl(var(--border));
+        background: hsl(var(--card));
+        color: hsl(var(--card-foreground));
+      }
+      .form-message {
+        font-size: 0.85rem;
+      }
+      .form-message.error { color: #dc2626; }
+      .form-message.success { color: #16a34a; }
       .theme-icon {
         width: 18px;
         height: 18px;
@@ -678,24 +707,6 @@ USER_TEMPLATE = """
 
       <main class="page">
         <div class="container">
-          <section class="metrics-grid">
-            <article class="metric-card bg-card text-card-foreground border-border rounded-xl">
-              <div class="card-title text-muted-foreground">Email</div>
-              <div class="card-value">{{ user.email }}</div>
-              <div class="card-meta text-muted-foreground">Primary account identity</div>
-            </article>
-            <article class="metric-card bg-card text-card-foreground border-border rounded-xl">
-              <div class="card-title text-muted-foreground">Membership</div>
-              <div class="card-value">{{ 'Premium' if user.is_premium else 'Free' }}</div>
-              <div class="card-meta text-muted-foreground">Current access level</div>
-            </article>
-            <article class="metric-card bg-card text-card-foreground border-border rounded-xl">
-              <div class="card-title text-muted-foreground">Billing</div>
-              <div class="card-value">{{ 'Manage in Stripe' if user.stripe_customer_id else 'Not connected' }}</div>
-              <div class="card-meta text-muted-foreground">Invoices and cancellation</div>
-            </article>
-          </section>
-
           <section class="account-panel bg-card text-card-foreground border-border rounded-xl">
             <h2>Account Details</h2>
             <p>Manage your current access and billing settings from the same dashboard style as the main domain view.</p>
@@ -722,6 +733,22 @@ USER_TEMPLATE = """
               {% endif %}
               <a class="action-button rounded-md" href="{{ url_for('index') }}">Back to domains</a>
             </div>
+            <form class="password-form" method="post" action="{{ url_for('user_page') }}">
+              <h3>Change password</h3>
+              {% if error %}
+                <div class="form-message error">{{ error }}</div>
+              {% endif %}
+              {% if success %}
+                <div class="form-message success">{{ success }}</div>
+              {% endif %}
+              <label for="current_password">Current password</label>
+              <input id="current_password" name="current_password" type="password" required>
+              <label for="new_password">New password</label>
+              <input id="new_password" name="new_password" type="password" minlength="8" required>
+              <label for="confirm_password">Confirm new password</label>
+              <input id="confirm_password" name="confirm_password" type="password" minlength="8" required>
+              <button class="action-button primary" type="submit">Update password</button>
+            </form>
           </section>
         </div>
       </main>
@@ -1307,10 +1334,29 @@ def logout():
     logout_user()
     return redirect(url_for("index"))
 
-@app.route("/user")
+@app.route("/user", methods=["GET", "POST"])
 @login_required
 def user_page():
-    return render_template_string(USER_TEMPLATE, user=current_user)
+    error = None
+    success = None
+
+    if request.method == "POST":
+        current_password = request.form.get("current_password", "")
+        new_password = request.form.get("new_password", "")
+        confirm_password = request.form.get("confirm_password", "")
+
+        if not current_user.check_password(current_password):
+            error = "Current password is incorrect."
+        elif len(new_password) < 8:
+            error = "New password must be at least 8 characters."
+        elif new_password != confirm_password:
+            error = "New password and confirmation do not match."
+        else:
+            current_user.set_password(new_password)
+            db.session.commit()
+            success = "Password updated successfully."
+
+    return render_template_string(USER_TEMPLATE, user=current_user, error=error, success=success)
 
 
 @app.route("/billing")
