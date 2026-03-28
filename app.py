@@ -589,6 +589,22 @@ USER_TEMPLATE = """
         flex-wrap: wrap;
         margin-top: 18px;
       }
+      .panel-toggle {
+        border: 1px solid hsl(var(--border));
+        background: hsl(var(--card));
+        color: hsl(var(--card-foreground));
+      }
+      .panel-toggle.active {
+        background: hsl(var(--primary));
+        color: hsl(var(--primary-foreground));
+        border-color: transparent;
+      }
+      .collapsible-section {
+        display: none;
+      }
+      .collapsible-section.is-open {
+        display: block;
+      }
       .password-form {
         margin-top: 20px;
         border-top: 1px solid hsl(var(--border));
@@ -766,42 +782,56 @@ USER_TEMPLATE = """
               {% if not user.is_premium %}
                 <a class="action-button primary" href="{{ url_for('checkout') }}">Upgrade to Premium</a>
               {% endif %}
+              <button class="action-button rounded-md panel-toggle {% if active_panel == 'password' %}active{% endif %}" type="button" data-panel-target="password-panel">Change password</button>
+              {% if user.is_premium %}
+                <button class="action-button rounded-md panel-toggle {% if active_panel == 'da_alert' %}active{% endif %}" type="button" data-panel-target="da-alert-panel">Daily DA email alerts</button>
+              {% endif %}
               <a class="action-button rounded-md" href="{{ url_for('index') }}">Back to domains</a>
             </div>
             {% if user.is_premium %}
-              <form class="premium-alert-form" method="post" action="{{ url_for('user_page') }}">
-                <input type="hidden" name="form_name" value="da_alert">
-                <h3>Daily DA email alerts</h3>
-                <p>
-                  Get one email per day with domains that have a Domain Authority (DA/DR) above your chosen limit.
-                  The default threshold is 15, and you can change it any time.
-                </p>
-                <label class="premium-alert-toggle" for="da_alert_enabled">
-                  <input id="da_alert_enabled" name="da_alert_enabled" type="checkbox" {% if user.da_alert_enabled %}checked{% endif %}>
-                  Enable daily DA alert emails
-                </label>
-                <label for="da_alert_threshold">Minimum DA threshold</label>
-                <input id="da_alert_threshold" name="da_alert_threshold" type="number" min="1" max="100" value="{{ user.da_alert_threshold or 15 }}">
-                <button class="action-button primary" type="submit">Save DA alert settings</button>
-              </form>
+              <div id="da-alert-panel" class="collapsible-section {% if active_panel == 'da_alert' %}is-open{% endif %}">
+                <form class="premium-alert-form" method="post" action="{{ url_for('user_page') }}">
+                  <input type="hidden" name="form_name" value="da_alert">
+                  <h3>Daily DA email alerts</h3>
+                  <p>
+                    Get one email per day with domains that have a Domain Authority (DA/DR) above your chosen limit.
+                    The default threshold is 15, and you can change it any time.
+                  </p>
+                  {% if active_panel == 'da_alert' and error %}
+                    <div class="form-message error">{{ error }}</div>
+                  {% endif %}
+                  {% if active_panel == 'da_alert' and success %}
+                    <div class="form-message success">{{ success }}</div>
+                  {% endif %}
+                  <label class="premium-alert-toggle" for="da_alert_enabled">
+                    <input id="da_alert_enabled" name="da_alert_enabled" type="checkbox" {% if user.da_alert_enabled %}checked{% endif %}>
+                    Enable daily DA alert emails
+                  </label>
+                  <label for="da_alert_threshold">Minimum DA threshold</label>
+                  <input id="da_alert_threshold" name="da_alert_threshold" type="number" min="1" max="100" value="{{ user.da_alert_threshold or 15 }}">
+                  <button class="action-button primary" type="submit">Save DA alert settings</button>
+                </form>
+              </div>
             {% endif %}
-            <form class="password-form" method="post" action="{{ url_for('user_page') }}">
-              <input type="hidden" name="form_name" value="password">
-              <h3>Change password</h3>
-              {% if error %}
-                <div class="form-message error">{{ error }}</div>
-              {% endif %}
-              {% if success %}
-                <div class="form-message success">{{ success }}</div>
-              {% endif %}
-              <label for="current_password">Current password</label>
-              <input id="current_password" name="current_password" type="password" required>
-              <label for="new_password">New password</label>
-              <input id="new_password" name="new_password" type="password" minlength="8" required>
-              <label for="confirm_password">Confirm new password</label>
-              <input id="confirm_password" name="confirm_password" type="password" minlength="8" required>
-              <button class="action-button primary" type="submit">Update password</button>
-            </form>
+            <div id="password-panel" class="collapsible-section {% if active_panel == 'password' %}is-open{% endif %}">
+              <form class="password-form" method="post" action="{{ url_for('user_page') }}">
+                <input type="hidden" name="form_name" value="password">
+                <h3>Change password</h3>
+                {% if active_panel == 'password' and error %}
+                  <div class="form-message error">{{ error }}</div>
+                {% endif %}
+                {% if active_panel == 'password' and success %}
+                  <div class="form-message success">{{ success }}</div>
+                {% endif %}
+                <label for="current_password">Current password</label>
+                <input id="current_password" name="current_password" type="password" required>
+                <label for="new_password">New password</label>
+                <input id="new_password" name="new_password" type="password" minlength="8" required>
+                <label for="confirm_password">Confirm new password</label>
+                <input id="confirm_password" name="confirm_password" type="password" minlength="8" required>
+                <button class="action-button primary" type="submit">Update password</button>
+              </form>
+            </div>
           </section>
         </div>
       </main>
@@ -825,6 +855,24 @@ USER_TEMPLATE = """
             window.localStorage.setItem(themeKey, root.classList.contains('dark') ? 'dark' : 'light')
           })
         }
+
+        const toggleButtons = Array.from(document.querySelectorAll('[data-panel-target]'))
+        const panels = Array.from(document.querySelectorAll('.collapsible-section'))
+        toggleButtons.forEach(function (button) {
+          button.addEventListener('click', function () {
+            const targetId = button.getAttribute('data-panel-target')
+            const targetPanel = document.getElementById(targetId)
+            const isOpen = targetPanel && targetPanel.classList.contains('is-open')
+
+            panels.forEach(function (panel) { panel.classList.remove('is-open') })
+            toggleButtons.forEach(function (toggleButton) { toggleButton.classList.remove('active') })
+
+            if (targetPanel && !isOpen) {
+              targetPanel.classList.add('is-open')
+              button.classList.add('active')
+            }
+          })
+        })
       })()
     </script>
   </body>
@@ -1398,10 +1446,12 @@ def logout():
 def user_page():
     error = None
     success = None
+    active_panel = None
 
     if request.method == "POST":
         form_name = request.form.get("form_name", "password")
         if form_name == "da_alert":
+            active_panel = "da_alert"
             if not current_user.is_premium:
                 error = "DA alert emails are available for Premium users only."
             else:
@@ -1420,6 +1470,7 @@ def user_page():
                     db.session.commit()
                     success = "Daily DA alert settings updated."
         else:
+            active_panel = "password"
             current_password = request.form.get("current_password", "")
             new_password = request.form.get("new_password", "")
             confirm_password = request.form.get("confirm_password", "")
@@ -1435,7 +1486,13 @@ def user_page():
                 db.session.commit()
                 success = "Password updated successfully."
 
-    return render_template_string(USER_TEMPLATE, user=current_user, error=error, success=success)
+    return render_template_string(
+        USER_TEMPLATE,
+        user=current_user,
+        error=error,
+        success=success,
+        active_panel=active_panel,
+    )
 
 
 @app.route("/billing")
