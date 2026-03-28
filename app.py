@@ -1,4 +1,5 @@
 import os
+from collections import deque
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -82,10 +83,10 @@ def normalize_scraped_domain(value: str, suffix: str):
 
 def extract_domains_from_payload(payload, suffix: str):
     records = []
-    queue = [payload]
+    queue = deque([payload])
 
     while queue:
-        current = queue.pop(0)
+        current = queue.popleft()
         if isinstance(current, list):
             queue.extend(current)
             continue
@@ -101,38 +102,12 @@ def extract_domains_from_payload(payload, suffix: str):
                         }
                     )
             for value in current.values():
-                queue.append(value)
+                if isinstance(value, (list, dict)):
+                    queue.append(value)
             continue
-        if isinstance(current, str):
-            normalized = normalize_scraped_domain(current, suffix)
-            if normalized:
-                records.append({"domain_name": normalized, "release_at": None})
 
     return records
 
-    while queue:
-        current = queue.pop(0)
-        if isinstance(current, list):
-            queue.extend(current)
-            continue
-        if isinstance(current, dict):
-            candidate_name = current.get("name") or current.get("domain") or current.get("domain_name")
-            if isinstance(candidate_name, str):
-                normalized = normalize_scraped_domain(candidate_name, suffix)
-                if normalized:
-                    records.append(
-                        {
-                            "domain_name": normalized,
-                            "release_at": str(current.get("release_at") or "").strip() or None,
-                        }
-                    )
-            for value in current.values():
-                queue.append(value)
-            continue
-        if isinstance(current, str):
-            normalized = normalize_scraped_domain(current, suffix)
-            if normalized:
-                records.append({"domain_name": normalized, "release_at": None})
 
 def scrape_domains(limit: int | None = None, release_date: str | None = None):
     sources = (
