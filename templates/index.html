@@ -503,13 +503,6 @@
                   <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"></path>
                 </svg>
               </button>
-              <details class="user-menu">
-                <summary class="user-trigger rounded-md" aria-label="Profile menu">{{ current_user.email[0]|upper }}</summary>
-                <div class="dropdown text-card-foreground">
-                  <a href="{{ url_for('user_page') }}">{{ current_user.email }}</a>
-                  <a href="{{ url_for('logout') }}">Logout</a>
-                </div>
-              </details>
             {% else %}
               <a class="header-link" href="{{ url_for('login') }}">Login</a>
               <a class="signup-button" href="{{ url_for('checkout') }}">Sign Up</a>
