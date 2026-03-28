@@ -1139,54 +1139,7 @@ def index():
         if search_query:
             query = query.filter(Domain.domain_name.ilike(f"%{search_query}%"))
         total_filtered = query.count()
-        used_live_domains_for_premium = False
-        active_release_iso = active_date.isoformat() if hasattr(active_date, "isoformat") else release_date
-
-        live_domains_for_date = []
-        try:
-            live_domains_for_date = scrape_domains(release_date=active_release_iso)
-        except Exception:
-            live_domains_for_date = []
-
-        if live_domains_for_date:
-            filtered_live_domains = [
-                domain for domain in live_domains_for_date if search_query in domain.lower()
-            ] if search_query else live_domains_for_date
-            total_domains = len(live_domains_for_date)
-            total_filtered = len(filtered_live_domains)
-
-            if not current_user.is_authenticated or not current_user.is_premium:
-                accessible_domains = filtered_live_domains[:25]
-                is_limited = total_filtered > 25
-                total_pages = max(1, (len(accessible_domains) + page_size - 1) // page_size) if accessible_domains else 1
-                if page > total_pages:
-                    page = total_pages
-                start_offset = (page - 1) * page_size
-                visible_domains = accessible_domains[start_offset:start_offset + page_size]
-            else:
-                accessible_domains = filtered_live_domains
-                is_limited = False
-                total_pages = max(1, (len(accessible_domains) + page_size - 1) // page_size) if accessible_domains else 1
-                if page > total_pages:
-                    page = total_pages
-                start_offset = (page - 1) * page_size
-                visible_domains = accessible_domains[start_offset:start_offset + page_size]
-
-            domains = [
-                SimpleNamespace(
-                    domain_name=domain,
-                    da=None,
-                    linking_root_domains=None,
-                    release_date=active_release_iso,
-                )
-                for domain in visible_domains
-            ]
-            domains = hydrate_domains_from_database(domains, active_date)
-            if any(domain.da is None and domain.linking_root_domains is None for domain in domains):
-                domains = hydrate_visible_domains(domains, active_date)
-            if current_user.is_authenticated and current_user.is_premium:
-                used_live_domains_for_premium = True
-        elif not current_user.is_authenticated or not current_user.is_premium:
+        if not current_user.is_authenticated or not current_user.is_premium:
             accessible_domains = query.limit(25).all()
             is_limited = total_filtered > 25
             total_pages = max(1, (len(accessible_domains) + page_size - 1) // page_size) if accessible_domains else 1
@@ -1232,18 +1185,13 @@ def index():
             is_limited = False
 
         hidden_count = max(total_domains - min(total_filtered, 25), 0) if not current_user.is_authenticated or not current_user.is_premium else 0
-        if (not used_live_domains_for_premium) and any(domain.da is None and domain.linking_root_domains is None for domain in domains):
-            domains = hydrate_visible_domains(domains, active_date)
-        if used_live_domains_for_premium:
-            highest_authority = max((domain.da or 0) for domain in domains) if domains else 0
-            highest_referring_domains = max((domain.linking_root_domains or 0) for domain in domains) if domains else 0
-        else:
-            metric_summary = query.with_entities(
-                db.func.max(Domain.da),
-                db.func.max(Domain.linking_root_domains),
-            ).order_by(None).first()
-            highest_authority = metric_summary[0] or 0
-            highest_referring_domains = metric_summary[1] or 0
+        domains = hydrate_domains_from_database(domains, active_date)
+        metric_summary = query.with_entities(
+            db.func.max(Domain.da),
+            db.func.max(Domain.linking_root_domains),
+        ).order_by(None).first()
+        highest_authority = metric_summary[0] or 0
+        highest_referring_domains = metric_summary[1] or 0
 
     domains_with_da = [domain.da for domain in domains if domain.da is not None]
     domains_with_links = [domain.linking_root_domains for domain in domains if domain.linking_root_domains is not None]
